@@ -31,8 +31,10 @@ export class Actor {
     this.crouch = false; this.sprint = false; this.aiming = false;
     this.slots = ['pickaxe', null, null, null, null];
     this.slot = 0;
-    this.mag = {}; this.reserve = { rifle: 60, shotgun: 10, sniper: 6 };
-    this.mats = { wood: 60, stone: 30 }; this.potions = 1; this.medkits = 0;
+    this.mag = {}; this.reserve = { rifle: 60, shotgun: 10, sniper: 6, smg: 60, pistol: 32 };
+    this.mats = { wood: 60, stone: 30, metal: 0 }; this.potions = 1; this.medkits = 0;
+    this.rar = {}; this.grenades = 0; this.rifts = 0;      // v16: raridade por arma, granadas, fendas
+    this.slideT = 0; this.mantleT = 0; this.coyote = 0; this.jumpBuf = 0; this.inWater = false;
     this.cooldown = 0; this.reloading = 0; this.using = 0; this.useKind = null;
     this.models = {};
     // cosméticos (loadout)
@@ -62,10 +64,11 @@ export class Actor {
   }
   get weaponType(){ return this.slots[this.slot] || 'none'; }
   get stats(){ return WEAPON_STATS[this.weaponType]; }
-  give(type){
+  give(type, rar){
     if(!WEAPON_STATS[type] || type === 'pickaxe') return false;
     let idx = this.slots.indexOf(type);
-    if(idx < 0){ idx = this.slots.indexOf(null, 1); if(idx < 0) idx = this.slot || 1; this.slots[idx] = type; }
+    if(idx < 0){ idx = this.slots.indexOf(null, 1); if(idx < 0) idx = this.slot || 1; this.slots[idx] = type; this.rar[type] = rar || 0; }
+    else this.rar[type] = Math.max(this.rar[type] || 0, rar || 0);
     if(this.mag[type] === undefined) this.mag[type] = WEAPON_STATS[type].mag;
     this.reserve[type] = (this.reserve[type] || 0) + Math.round(WEAPON_STATS[type].mag * 1.5);
     return idx;
@@ -159,14 +162,14 @@ export class Actor {
     if(ev === 'hit' && this._pendingSwing){ g.pickaxeHit(this, this._pendingSwing.origin, this._pendingSwing.dir); this._pendingSwing = null; }
     if(ev === 'magOut') g.audio.play('magOut', this.root.position, { vol: 0.5 });
     if(ev === 'magIn') g.audio.play('magIn', this.root.position, { vol: 0.5 });
-    if(ev === 'magSwap' && this.models.rifle && g.quality !== 'baixa') this._dropMag();
+    if(ev === 'magSwap' && this.models[this.weaponType] && this.models[this.weaponType].parts.mag && g.quality !== 'baixa') this._dropMag();
     if(ev === 'charge' || ev === 'shell') g.audio.play(ev === 'shell' ? 'magIn' : 'bolt', this.root.position, { vol: 0.4 });
     if(ev === 'gulp') g.audio.play('gulp', this.root.position, { vol: 0.6 });
     if(clip === 'pumpShotgun' || ev === 'pump') g.audio.play('pump', this.root.position, { vol: 0.5 });
     if(clip === 'boltSniper' && ev === 'bolt') g.audio.play('bolt', this.root.position, { vol: 0.5 });
   }
   _dropMag(){
-    const mag = this.models.rifle.parts.mag; if(!mag) return;
+    const mag = this.models[this.weaponType] && this.models[this.weaponType].parts.mag; if(!mag) return;
     const clone = mag.clone(); mag.getWorldPosition(clone.position); mag.getWorldQuaternion(clone.quaternion);
     this.game.scene.add(clone);
     this.game.physics.addBody(clone, new THREE.Vector3(0, -2, 0), new THREE.Vector3(3, 1, 2), { life: 4, r: 0.15, bounce: 0.25, onHit: (b) => { if(b.hits < 2) this.game.audio.play('click', b.mesh.position, { vol: 0.2, rate: 0.7 }); } });
@@ -206,17 +209,43 @@ export class Actor {
     if(this.remote){ if(g.net) g.net.step(this, dt); }
     else if(this.alive){
       const speedBase = this.crouch ? 8 : this.sprint ? 23 : 17;
-      const slow = (this.using > 0 ? 0.45 : 1) * (this.aiming ? 0.6 : 1);
+      // v16: água (lago/rio) abranda e salpica
+      const wy = g.world && g.world.waterAt ? g.world.waterAt(b.pos.x, b.pos.z) : null;
+      this.inWater = wy !== null && b.pos.y < wy + 0.4 && this.mode === 'ground';
+      const slow = (this.using > 0 ? 0.45 : 1) * (this.aiming ? 0.6 : 1) * (this.inWater ? 0.62 : 1);
       const mi = this.moveInput;
       const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
       // input local (x = direita da câmera, y = frente)
       const fx = sy, fz = cy, rx = -cy, rz = sy;
       let wx = fx * mi.y + rx * mi.x, wz = fz * mi.y + rz * mi.x;
       const l = Math.hypot(wx, wz); if(l > 1){ wx /= l; wz /= l; }
-      if(this.mode === 'ground'){
-        const accel = this.flying ? 6 : b.grounded ? 12 : 3, fm = this.flying ? 2.2 : 1;
+      if(this.mode === 'zip'){
+        if(g.fs) g.fs.zipStep(this, dt);
+      } else if(this.mantleT > 0){
+        // v16: escalar beirais — puxa o corpo para cima e para a frente numa curva curta
+        this.mantleT -= dt; const M = this.mantle, u = 1 - Math.max(0, this.mantleT) / 0.32, e = u * u * (3 - 2 * u);
+        b.pos.x = M.from.x + (M.to.x - M.from.x) * Math.min(1, e * 1.4 - 0.4 > 0 ? e * 1.4 - 0.4 : 0);
+        b.pos.z = M.from.z + (M.to.z - M.from.z) * Math.min(1, Math.max(0, e * 1.4 - 0.4));
+        b.pos.y = M.from.y + (M.to.y - M.from.y) * Math.min(1, e * 1.5);
+        b.vel.set(0, 0, 0);
+        if(this.mantleT <= 0){ b.pos.copy(M.to); b.grounded = true; b.vel.set(Math.sin(this.yaw) * 8, 0, Math.cos(this.yaw) * 8); }
+      } else if(this.mode === 'ground'){
+        // v16: deslizar (agachar a correr) — conserva o impulso e trava devagar
+        if(this.slideT > 0){
+          this.slideT -= dt; this.crouch = true;
+          const fr = b.grounded ? 1.6 : 0.4; b.vel.x -= b.vel.x * Math.min(1, fr * dt); b.vel.z -= b.vel.z * Math.min(1, fr * dt);
+          if(Math.random() < 0.5 && b.grounded) g.particles.emit('dust', b.pos, { n: 1, power: 0.7 });
+          if(this.slideT <= 0 || Math.hypot(b.vel.x, b.vel.z) < 9){ this.slideT = 0; }
+        } else {
+        const accel = this.flying ? 6 : b.grounded ? 12 : 4.5, fm = this.flying ? 2.2 : 1;
         b.vel.x += (wx * speedBase * slow * fm - b.vel.x) * Math.min(1, accel * dt);
         b.vel.z += (wz * speedBase * slow * fm - b.vel.z) * Math.min(1, accel * dt);
+        }
+        // tempo de coyote + buffer de salto
+        this.coyote = b.grounded ? 0.13 : this.coyote - dt; this.jumpBuf -= dt;
+        if(this.jumpBuf > 0 && this.coyote > 0 && !this.flying && b.vel.y <= 1){ this.jumpBuf = 0; this.coyote = 0; this._doJump(); }
+        // escalar: no ar, a empurrar para a frente contra um beiral baixo
+        if(!b.grounded && !this.flying && mi.y > 0.5 && b.vel.y < 12 && this.airTime > 0.08) this._tryMantle();
         b.gravityScale = this.flying ? 0 : 1; b.maxFall = 0;
         if(this.flying) b.vel.y += ((this.flyUp || 0) * 28 - b.vel.y) * Math.min(1, 8 * dt);   // voo do Modo Criativo
       } else if(this.mode === 'freefall'){
@@ -240,7 +269,7 @@ export class Actor {
         this.height = b.pos.y - g.physics.groundAt(b.pos.x, b.pos.z, b.pos.y, 0);
       }
       const wasMode = this.mode, prevVy = b.vel.y;
-      g.physics.moveCharacter(b, dt);
+      if(this.mode !== 'zip' && !(this.mantleT > 0)) g.physics.moveCharacter(b, dt);
       if(!b.grounded) this.airTime += dt; 
       if(b.landVy < -30 && this.mode === 'ground') this.anim.landImpact(b.landVy);
       if(b.grounded && this.mode !== 'ground'){ this.setMode('ground'); if(wasMode === 'glide'){ this.anim.play('landGlide'); g.particles.emit('dust', b.pos, { n: 16, power: 1.8 }); this._landFx(); } }
@@ -254,7 +283,7 @@ export class Actor {
       const sp = Math.hypot(b.vel.x, b.vel.z);
       if(b.grounded && sp > 3){
         const side = Math.sin(this.anim.phase * Math.PI * 2) > 0 ? 1 : -1;
-        if(side !== this.lastStepSide){ this.lastStepSide = side; g.onFootstep(this, sp); }
+        if(side !== this.lastStepSide){ this.lastStepSide = side; if(this.slideT <= 0) g.onFootstep(this, sp); if(this.inWater){ g.particles.emit('splash', b.pos, { n: 4 }); } }
       }
       // rotação do corpo = yaw de mira (estilo Fortnite)
       this.root.rotation.y = this.yaw;
@@ -266,8 +295,9 @@ export class Actor {
       vel: b.vel, grounded: b.grounded, crouch: this.crouch, vy: b.vel.y, mode: this.mode,
       weapon: this.using > 0 ? 'none' : (this.weaponType === 'none' ? 'none' : this.weaponType),
       aimPitch: this.pitch, aiming: this.aiming, aimPoint: this.aimPoint || null, lookTarget: this.lookTarget || null,
-      dive: this.fallInput.dive, bank: this.fallInput.bank
+      dive: this.fallInput.dive, bank: this.fallInput.bank, slide: this.slideT > 0
     };
+    if(this.mode === 'zip'){ st.mode = 'glide'; st.dive = 0; st.bank = 0; }
     // LOD por distância
     if(g.camera){
       const d = g.camera.position.distanceTo(this.root.position);
@@ -288,6 +318,11 @@ export class Actor {
       if(ud.flap) ud.flap.forEach((w, i) => w.rotation.z = (i ? -1 : 1) * (Math.sin(g.time * 5) * 0.35 + 0.1));
       if(ud.balloons) ud.balloons.forEach((bm, i) => { bm.position.y += Math.sin(g.time * 2 + i * 1.7) * 0.004; bm.rotation.z = Math.sin(g.time * 1.3 + i) * 0.08; });
       if(ud.pulse) ud.pulse.emissiveIntensity = 2 + Math.sin(g.time * 8) * 1.2;
+      // v16: animações dos planadores novos
+      if(ud.spin) ud.spin.rotation.z += dt * 18;
+      if(ud.tail) ud.tail.forEach((sg, i) => { sg.rotation.x = Math.sin(g.time * 4 - i * 0.8) * 0.35; sg.rotation.y = Math.sin(g.time * 3 - i) * 0.25; });
+      if(ud.carpet && this._animSkip === 1){ const pa = ud.carpet.geometry.attributes.position, bs = ud.carpet.userData.base; for(let i = 0; i < pa.count; i++){ const x = bs[i * 3], z = bs[i * 3 + 2]; pa.array[i * 3 + 1] = Math.sin(z * 1.7 + g.time * 6) * 0.18 + Math.sin(x * 0.9 + g.time * 3) * 0.08; } pa.needsUpdate = true; }
+      if(ud.fire && g.particles && g.quality !== 'baixa' && Math.random() < 0.6){ const tp = ud.fire[Math.floor(Math.random() * ud.fire.length)]; g.particles.emit('fire', this.glider.localToWorld(_v.copy(tp)), { n: 1, size: 0.7, r: 0.5 }); }
       if(ud.thrusters && g.particles && g.quality !== 'baixa' && Math.random() < 0.7) ud.thrusters.forEach(tp => { const wp = this.glider.localToWorld(tp.clone()); g.particles.emit('fire', wp, { n: 1, size: 0.4, r: 0.2 }); });
     }
     // rastro da picareta durante o golpe
@@ -325,6 +360,34 @@ export class Actor {
     for(let i = 0; i < n; i++){ const a = i / n * Math.PI * 2; _v.set(p.x + Math.cos(a) * 1.6, p.y + 0.4, p.z + Math.sin(a) * 1.6); g.particles.emit(ct.color === 'rainbow' ? 'confetti' : 'magic', _v, ct.color === 'rainbow' ? { n: 1 } : { color: col, n: 1 }); }
     if(this.contrailKind === 'fogo') g.particles.emit('fire', p, { n: 10, size: 0.6, r: 1.2 });
     if(g.quality !== 'baixa') g.particles.flash(_v.set(p.x, p.y + 1.5, p.z), col, 4, 0.25, 14);
+  }
+  // ----- v16: movimento -----
+  requestJump(){ this.jumpBuf = 0.16; if(this.slideT > 0){ this.slideT = 0; } }
+  _doJump(){
+    const b = this.body; b.vel.y = this.inWater ? 22 : 27; b.grounded = false;
+    // salto a partir do deslize conserva velocidade horizontal (slide-jump)
+    this.game.audio.play('jump', this.root.position, { vol: this.isPlayer ? 0.4 : 0.3 }); this.anim.stopEmotes();
+    if(this.inWater) this.game.particles.emit('splash', b.pos, { n: 10 });
+  }
+  startSlide(){
+    const b = this.body; if(!b.grounded || this.mode !== 'ground' || this.slideT > 0) return false;
+    const sp = Math.hypot(b.vel.x, b.vel.z); if(sp < 15) return false;
+    const k = 31 / sp; b.vel.x *= k; b.vel.z *= k;
+    this.slideT = 0.95; this.crouch = true;
+    this.game.audio.play('woosh', this.root.position, { vol: 0.35, rate: 1.4 });
+    this.game.particles.emit('dust', b.pos, { n: 6, power: 1.2 });
+    return true;
+  }
+  _tryMantle(){
+    const b = this.body, P = this.game.physics, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    const px = b.pos.x + fx * (b.radius + 1.3), pz = b.pos.z + fz * (b.radius + 1.3);
+    const top = P.groundAt(px, pz, b.pos.y + 7.2, 0.4);
+    if(top < b.pos.y + 1.8 || top > b.pos.y + 8.4) return;
+    // espaço livre por cima do beiral
+    for(const bx of P.nearBoxes(px - 1, pz - 1, px + 1, pz + 1)) if(!bx.ramp && bx.min.y > top + 0.2 && bx.min.y < top + b.height && px > bx.min.x - 1 && px < bx.max.x + 1 && pz > bx.min.z - 1 && pz < bx.max.z + 1) return;
+    this.mantle = { from: b.pos.clone(), to: new THREE.Vector3(px, top + 0.05, pz) }; this.mantleT = 0.32;
+    this.anim.play('launch', { speed: 2 });
+    this.game.audio.play('land', this.root.position, { vol: 0.25, rate: 1.4 });
   }
   setMode(m){
     if(this.mode === m) return;

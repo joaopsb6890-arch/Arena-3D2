@@ -4,11 +4,15 @@
 // tempestade em fases, 11 bots com IA, HUD completo.
 // ============================================================
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { PhysicsWorld } from './physics.js';
-import { World, heightAt, GRID, WALL_H, MAP_R } from './world.js';
+import { World, heightAt, GRID, WALL_H, MAP_R, DESERT } from './world.js';
+import { LOCATIONS, ROADS, ZONES } from './pois.js';
 import { Actor } from './actor.js';
 import { BotBrain } from './ai.js';
-import { WEAPON_STATS, createWeapon, createPickaxe, createGlider, createPotion, createMedkit } from './weapons.js';
+import { WEAPON_STATS, createWeapon, createPickaxe, createGlider, createPotion, createMedkit, RARITY, GUNS, rollRarity } from './weapons.js';
+import { pieceGeometry, buildMaterials, BUILD_MATS, EDITS } from './buildpieces.js';
+import { FortSystems } from './fnsystems.js';
 import { PICKAXES, GLIDERS } from './cosmetics.js';
 import { TPSCamera, CinematicDirector } from '../engine/camera.js';
 import { ParticleSystem } from '../engine/particles.js';
@@ -50,11 +54,12 @@ export class Match {
     this.shellGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.16, 6); this.shellGeo.rotateZ(Math.PI / 2);
     this.actors = []; this.bots = []; this.structures = []; this.tracers = [];
     this.time = 0; this.phase = 'bus'; this.keys = {}; this.mouse = { l: false, r: false };
-    this.build = { on: false, piece: 'wall', ghost: null, rot: 0 };
+    this.build = { on: false, piece: 'wall', ghost: null, rot: 0, mat: 'wood' };
     this.tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe3a0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
     this.tracerGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 5, 1, true); this.tracerGeo.rotateX(Math.PI / 2); this.tracerGeo.translate(0, 0, 0.5);
     this.net = session ? new NetSync(this, session, session.startInfo) : null;
     this.sys = new MatchSystems(this);
+    this.fs = new FortSystems(this);
     this.rules = new ModeRules(this, this.modeId); this.mode = this.rules.M;
     if(this.layout) this.layoutObjs = buildLayout(this, this.layout, false);
     if(this.mode.creative) this.creative = new CreativeTools(this);
@@ -63,7 +68,7 @@ export class Match {
   // ---------------- início ----------------
   start(skin, bodyType){
     const skinKeys = Object.keys(SKINS);
-    const pks = ['padrao', 'machado', 'martelo', 'foice', 'cristal', 'lamina', 'doce'], gls = ['classico', 'guardachuva', 'asas', 'jato', 'folha'], cts = ['nenhum', 'nuvem', 'arcoiris', 'fogo', 'estrelas'];
+    const pks = ['padrao', 'machado', 'martelo', 'foice', 'cristal', 'lamina', 'doce'], gls = ['classico', 'guardachuva', 'asas', 'jato', 'folha', 'tapete', 'neon', 'pipa', 'dirigivel', 'fenix', 'nuvem'], cts = ['nenhum', 'nuvem', 'arcoiris', 'fogo', 'estrelas'];
     const mkBot = (i) => {
       const b = new Actor(this, skinKeys[(i + 3) % skinKeys.length], { name: BOT_NAMES[i % BOT_NAMES.length], bodyType: ['padrao', 'atletico', 'robusto', 'esguio'][i % 4], loadout: { pickaxe: pks[i % pks.length], glider: gls[(i * 3) % gls.length], contrail: this.quality === 'baixa' ? 'nenhum' : cts[(i * 2) % cts.length] } });
       b.brain = new BotBrain(b, this);
@@ -121,14 +126,26 @@ export class Match {
   isAlly(a, b){ return this.rules ? this.rules.isAlly(a, b) : false; }
   _finish(win, killer, sub){ this.endMatch(win, killer, sub); }
   _makeBus(){
-    const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(8, 7, 22, 1, 1, 1), Mat.paint(0x2563eb)); body.position.y = 0;
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.6, 22.2), Mat.paint(0xf1f5f9)); roof.position.y = 3.8;
-    const bal = new THREE.Mesh(new THREE.SphereGeometry(10, 24, 18), Mat.paint(0x60a5fa)); bal.position.y = 18; bal.scale.set(1, 1.1, 1.4);
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(8.3, 1, 22.3), Mat.paint(0xfbbf24)); stripe.position.y = -1.5;
-    for(let i = 0; i < 4; i++){ const r = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 12, 4), Mat.metal(0x444444)); r.position.set(i < 2 ? -3 : 3, 10, i % 2 ? -8 : 8); g.add(r); }
-    const wins = new THREE.Mesh(new THREE.BoxGeometry(8.4, 2, 18), Mat.glass(0x93c5fd)); wins.position.y = 1.2;
-    g.add(body, roof, bal, stripe, wins);
+    // v16: Ônibus de Batalha mais detalhado — carroçaria arredondada, janelas, rodas, balão às riscas com cordas
+    const g = new THREE.Group(), add = (geo, mat, x, y, z, rx, ry, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0); g.add(m); return m; };
+    const blue = Mat.paint(0x2563eb), white = Mat.paint(0xf1f5f9), yel = Mat.paint(0xfbbf24), dark = Mat.polymer(0x111827), glass = Mat.glass(0x93c5fd), chrome = Mat.metal(0xd1d5db, 0.2);
+    add(new RoundedBoxGeometry(8, 7, 22, 3, 1.2), blue, 0, 0, 0);
+    add(new RoundedBoxGeometry(8.2, 0.8, 22.2, 2, 0.35), white, 0, 3.6, 0);
+    add(new THREE.BoxGeometry(8.25, 1, 22.3), yel, 0, -1.6, 0);
+    for(let i = 0; i < 6; i++) for(const sx of [-1, 1]) add(new THREE.BoxGeometry(0.12, 2.1, 2.6), glass, sx * 4.05, 1.2, -8 + i * 3.1);
+    add(new THREE.BoxGeometry(7, 2.6, 0.14), glass, 0, 1.2, 11.05);
+    add(new THREE.BoxGeometry(8.4, 1, 0.8), chrome, 0, -3.1, 11.1); add(new THREE.BoxGeometry(8.4, 1, 0.8), chrome, 0, -3.1, -11.1);
+    for(const sx of [-2.8, 2.8]) add(new THREE.CylinderGeometry(0.6, 0.6, 0.2, 16), Mat.emissive(0xfff3c4, 2), sx, -1.8, 11.1, Math.PI / 2);
+    for(const sx of [-1, 1]) for(const sz of [-7, 7]){ add(new THREE.CylinderGeometry(1.5, 1.5, 1, 20), dark, sx * 3.8, -3.6, sz, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.7, 0.7, 1.05, 12), chrome, sx * 3.85, -3.6, sz, 0, 0, Math.PI / 2); }
+    add(new THREE.BoxGeometry(0.4, 3, 6), blue, 0, 5.4, -8.5); add(new THREE.BoxGeometry(3.4, 0.3, 3), yel, 0, 6.8, -9.5);
+    // balão com gomos coloridos
+    const bg = new THREE.SphereGeometry(10, 32, 20), bp = bg.attributes.position, col = new Float32Array(bp.count * 3), c1 = new THREE.Color(0x60a5fa), c2 = new THREE.Color(0xf8fafc);
+    for(let i = 0; i < bp.count; i++){ const a = Math.atan2(bp.getZ(i), bp.getX(i)); const c = Math.floor((a + Math.PI) / (Math.PI * 2) * 12) % 2 ? c1 : c2; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    bg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const bal = add(bg, Mat.vcolor('busballoon', { roughness: 0.5 }), 0, 19, 0); bal.scale.set(1, 1.1, 1.4);
+    add(new THREE.TorusGeometry(10.1, 0.35, 8, 40), yel, 0, 19, 0, Math.PI / 2).scale.set(1, 1.4, 1);
+    add(new THREE.CylinderGeometry(1.2, 2, 1.6, 16), dark, 0, 7.4, 0);
+    for(let i = 0; i < 4; i++){ const sx = i < 2 ? -3 : 3, sz = i % 2 ? -8 : 8, top = new THREE.Vector3(sx * 1.6, 12, sz * 1.2), bot = new THREE.Vector3(sx, 4, sz), d = top.clone().sub(bot); const r = add(new THREE.CylinderGeometry(0.08, 0.08, d.length(), 4), Mat.metal(0x444444), (top.x + bot.x) / 2, (top.y + bot.y) / 2, (top.z + bot.z) / 2); r.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); }
     g.traverse(o => { if(o.isMesh) o.castShadow = true; });
     this.scene.add(g); return g;
   }
@@ -156,14 +173,18 @@ export class Match {
       if(e.code === 'Space' && this.phase === 'bus'){ this.jumpFromBus(P); return; }
       if(e.code === 'Space' && P.mode === 'freefall' && P.alive){ P.wantDeploy = true; if((P.height || 999) >= 240) this.toast('Alto demais para abrir o planador'); return; }
       if(e.code === 'KeyT' && this.sys) this.sys.vendorBuy(P, 1);
-      if(e.code === 'Space' && P.body.grounded && P.alive && P.mode === 'ground'){ P.body.vel.y = 27; this.audio.play('jump', P.root.position, { vol: 0.4 }); P.anim.stopEmotes(); }
+      if(e.code === 'Space' && P.alive && P.mode === 'zip'){ this.fs.detachZip(P, true); return; }
+      if(e.code === 'Space' && P.alive && P.mode === 'ground' && !e.repeat) P.requestJump();
       if(e.code.startsWith('Digit')){ const n = +e.code.slice(5); if(n >= 1 && n <= 5){ if(this.build.on) this.setBuild(false); P.equip(n - 1); } }
       if(e.code === 'KeyQ' || e.code === 'KeyF') this.setBuild(!this.build.on);
-      if(this.build.on){ const map = { KeyZ: 'wall', KeyX: 'floor', KeyC: 'ramp', KeyV: 'cone' }; if(map[e.code]) this.setBuildPiece(map[e.code]); if(e.code === 'KeyR') this.build.rot = (this.build.rot + 1) % 4; }
+      if(this.build.on){ const map = { KeyZ: 'wall', KeyX: 'floor', KeyC: 'ramp', KeyV: 'cone' }; if(map[e.code]) this.setBuildPiece(map[e.code]); if(e.code === 'KeyR') this.build.rot = (this.build.rot + 1) % 4; if(e.code === 'KeyN') this.cycleBuildMat(); }
       else {
         if(e.code === 'KeyR') P.reload();
-        if(e.code === 'KeyC' || e.code === 'ControlLeft') P.crouch = !P.crouch;
+        if(e.code === 'KeyC' || e.code === 'ControlLeft'){ if(!(P.sprint && P.startSlide())) P.crouch = !P.crouch; }
+        if(e.code === 'KeyX' && !e.repeat && P.alive){ if(!this.fs.throwGrenade(P, this.aimDir || new THREE.Vector3(Math.sin(P.yaw), 0, Math.cos(P.yaw)))) { if(P.grenades <= 0) this.toast('Sem granadas'); } }
+        if(e.code === 'KeyZ' && !e.repeat && P.alive){ if(!this.fs.useRift(P)) { if(P.rifts <= 0) this.toast('Sem Fenda Portátil'); } else this.toast('FENDA! Abre o planador para descer'); }
       }
+      if(e.code === 'KeyY' && !e.repeat) this.editAim();
       if(e.code === 'KeyE') this.interact();
       if(e.code === 'KeyH') P.useItem('potion');
       if(e.code === 'KeyG') P.useItem('medkit');
@@ -180,7 +201,9 @@ export class Match {
       if(this.phase === 'bus'){ this.jumpFromBus(this.player); return; }
       if(e.button === 0) this.mouse.l = true;
       if(e.button === 2) this.mouse.r = true;
-      if(e.button === 0 && this.build.on) this.placePiece();
+      if(e.button === 0 && this.build.on){ this.placePiece(); this._lastPlace = this.time; }
+      if(e.button === 2 && this.build.on) this.cycleBuildMat();
+      if(e.button === 1){ e.preventDefault(); if(this.player && this.player.alive) this.fs.ping(this.player); }
       if(e.button === 0 && !this.build.on) this._fireOnce = true;
     };
     this._mu = (e) => { if(e.button === 0) this.mouse.l = false; if(e.button === 2) this.mouse.r = false; };
@@ -217,6 +240,7 @@ export class Match {
     this.world.soundSpots.forEach(s => { const h = this.audio.loops[s.id]; if(h){ h.stop(); delete this.audio.loops[s.id]; } });
     ['wind', 'rain'].forEach(id => { const h = this.audio.loops[id]; if(h){ h.stop(); delete this.audio.loops[id]; } });
     if(this.sys) this.sys.dispose();
+    if(this.fs) this.fs.dispose();
     if(this.net) this.net.dispose();
     const gc = document.getElementById('game-chat'); if(gc){ gc.classList.remove('on', 'typing'); gc.querySelector('.log').innerHTML = ''; }
     this.scene.traverse(o => { if(o.geometry) o.geometry.dispose(); });
@@ -318,70 +342,110 @@ export class Match {
     tmp.forEach(S => { try { this.removeStructure(S); } catch(e){} });
   }
   setBuildPiece(p){ this.build.piece = p; this._makeGhost(); this._updateSlotsUI(); }
-  _pieceGeo(p){
+  _pieceGeo(p){ return pieceGeometry(p, 'wood', 'full').geo; }
+  _makeGhost(){
+    if(this.build.ghost) this.scene.remove(this.build.ghost);
+    const kind = this.build.mat || 'wood', col = { wood: 0x60a5fa, stone: 0x93c5fd, metal: 0xa5b4fc }[kind];
+    const m = new THREE.Mesh(pieceGeometry(this.build.piece, kind, 'full').geo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.32, depthWrite: false }));
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(this._pieceGeoSimple(this.build.piece)), new THREE.LineBasicMaterial({ color: 0xdbeafe }));
+    m.add(edges); m.userData.noProbe = true; m.userData.kind = kind;
+    this.scene.add(m); this.build.ghost = m;
+  }
+  _pieceGeoSimple(p){
     if(p === 'wall') return new THREE.BoxGeometry(GRID, WALL_H, 0.6);
     if(p === 'floor') return new THREE.BoxGeometry(GRID, 0.6, GRID);
     if(p === 'ramp'){ const len = Math.hypot(GRID, WALL_H); const g = new THREE.BoxGeometry(GRID, 0.6, len); g.rotateX(-Math.atan2(WALL_H, GRID)); return g; }
     const g = new THREE.ConeGeometry(GRID * 0.71, WALL_H * 0.5, 4, 1); g.rotateY(Math.PI / 4); g.translate(0, WALL_H * 0.25, 0); return g;
   }
-  _makeGhost(){
-    if(this.build.ghost) this.scene.remove(this.build.ghost);
-    const m = new THREE.Mesh(this._pieceGeo(this.build.piece), new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.35, depthWrite: false }));
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0xbfdbfe }));
-    m.add(edges); m.userData.noProbe = true;
-    this.scene.add(m); this.build.ghost = m;
+  /** v16: troca o material de construção (botão direito no modo construção) */
+  cycleBuildMat(){
+    const order = ['wood', 'stone', 'metal'], i = order.indexOf(this.build.mat || 'wood');
+    this.build.mat = order[(i + 1) % 3]; this._makeGhost(); this._updateSlotsUI();
+    this.audio.play('ui', null, { vol: 0.4, rate: 1.2 + i * 0.15 });
+    this.toast('Material: ' + BUILD_MATS[this.build.mat].label);
   }
   _placement(actor, piece, yaw){
     const p = actor.root.position;
     const q = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
     const fx = Math.round(Math.sin(q)), fz = Math.round(Math.cos(q));
     const cx = Math.floor(p.x / GRID) * GRID + GRID / 2, cz = Math.floor(p.z / GRID) * GRID + GRID / 2;
-    const baseY = Math.max(0, Math.round((p.y - heightAt(p.x, p.z) > 2 ? p.y : heightAt(cx, cz)) / WALL_H) * WALL_H) + (p.y < 1 ? heightAt(cx, cz) * 0 : 0);
+    const baseY = Math.max(0, Math.round((p.y - heightAt(p.x, p.z) > 2 ? p.y : heightAt(cx, cz)) / WALL_H) * WALL_H);
     const gy = Math.max(heightAt(cx + fx * GRID, cz + fz * GRID), 0);
     const y0 = Math.max(baseY, Math.floor(p.y / WALL_H) * WALL_H, p.y > gy + 1 ? Math.floor(p.y / WALL_H) * WALL_H : gy - 0.3);
     const pos = new THREE.Vector3(), rot = new THREE.Euler(0, q, 0);
+    const pitch = actor.isPlayer ? this.player.pitch : 0;
     if(piece === 'wall'){ pos.set(cx + fx * GRID / 2, y0 + WALL_H / 2, cz + fz * GRID / 2); }
-    else if(piece === 'floor'){ pos.set(cx + fx * GRID, y0 + (this.player.pitch > 0.25 ? WALL_H : 0) + 0.3, cz + fz * GRID); }
+    else if(piece === 'floor'){ pos.set(cx + fx * GRID, y0 + (pitch > 0.25 ? WALL_H : 0) + 0.3, cz + fz * GRID); }
     else if(piece === 'ramp'){ pos.set(cx + fx * GRID, y0 + WALL_H / 2, cz + fz * GRID); }
     else { pos.set(cx, y0 + WALL_H, cz); }
     return { pos, rot, q, fx, fz, y0 };
   }
-  placePiece(actor, piece, yaw){
+  placePiece(actor, piece, yaw, matKind){
     actor = actor || this.player; piece = piece || this.build.piece; yaw = yaw ?? actor.yaw;
-    if(actor.mats.wood < 10) { if(actor.isPlayer) this.toast('Madeira insuficiente'); return null; }
+    // v16: 3 materiais. Jogador usa o selecionado; bots usam o que têm mais
+    let kind = matKind || (actor.isPlayer ? (this.build.mat || 'wood') : ['wood', 'stone', 'metal'].reduce((a, b) => (actor.mats[b] || 0) > (actor.mats[a] || 0) ? b : a, 'wood'));
+    if((actor.mats[kind] || 0) < 10){ if(actor.isPlayer){ if(!this._noMatT || this.time - this._noMatT > 1.2){ this.toast(BUILD_MATS[kind].label + ' insuficiente'); this._noMatT = this.time; } } return null; }
     const pl = this._placement(actor, piece, yaw);
-    // evita duplicar
-    if(this.structures.some(s => s.alive && s.piece === piece && s.mesh.position.distanceTo(pl.pos) < 1 && Math.abs(s.q - pl.q) < 0.1)) return null;
-    actor.mats.wood -= 10;
-    const S = this.makeStructure(piece, pl.pos, pl.q, actor, false);
+    if(this.structures.some(s => s.alive && s.piece === piece && s.mesh.position.distanceTo(pl.pos) < 1 && (piece !== 'wall' || Math.abs(Math.cos(s.q - pl.q)) > 0.9))) return null;
+    actor.mats[kind] -= 10;
+    const S = this.makeStructure(piece, pl.pos, pl.q, actor, false, kind);
     if(this.net) this.net.sendBuild(S, actor);
     this.particles.emit('build', pl.pos);
-    this.audio.play('build', pl.pos, { vol: 0.6 });
+    this.audio.play('build', pl.pos, { vol: 0.6, rate: kind === 'metal' ? 0.8 : kind === 'stone' ? 0.9 : 1 });
     return S;
   }
   /** cria uma peça de construção (jogador, bot ou mapa criado) */
-  makeStructure(piece, pos, q, owner, instant, matKind){
-    const fx = Math.round(Math.sin(q)), fz = Math.round(Math.cos(q));
-    const rot = new THREE.Euler(0, q, 0);
-    const mat = matKind === 'stone' ? Mat.rock(0xa8a29e) : matKind === 'metal' ? Mat.metal(0x94a3b8, 0.4) : Mat.wood(0xb07b47);
-    const mesh = new THREE.Mesh(this._pieceGeo(piece), mat);
-    mesh.position.copy(pos); mesh.rotation.copy(rot); mesh.castShadow = true; mesh.receiveShadow = true;
+  makeStructure(piece, pos, q, owner, instant, matKind, edit){
+    matKind = BUILD_MATS[matKind] ? matKind : 'wood'; edit = edit || 'full';
+    const B = BUILD_MATS[matKind];
+    const mesh = new THREE.Mesh(pieceGeometry(piece, matKind, edit).geo, buildMaterials(matKind));
+    mesh.position.copy(pos); mesh.rotation.set(0, q + (piece === 'ramp' && edit === 'flip' ? Math.PI : 0), 0); mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.scale.setScalar(instant ? 1 : 0.05);
     this.scene.add(mesh); this.world.raycastTargets.push(mesh); this.tps.colliders.push(mesh);
-    const maxHp = matKind === 'metal' ? 500 : matKind === 'stone' ? 300 : 150;
-    const S = { mesh, piece, hp: instant ? maxHp : 60, maxHp, growT: instant ? 1 : 0, alive: true, q, owner, matKind };
+    const S = { mesh, piece, hp: instant ? B.hp : B.hp * 0.3, maxHp: B.hp, growT: instant ? 1 : 0, grow: B.grow, alive: true, q, owner, matKind, edit, boxes: [] };
     mesh.userData.structure = S;
-    const bb = new THREE.Box3().setFromObject(new THREE.Mesh(mesh.geometry)).applyMatrix4(new THREE.Matrix4().compose(pos, new THREE.Quaternion().setFromEuler(rot), new THREE.Vector3(1, 1, 1)));
-    if(piece === 'ramp'){
-      const axis = Math.abs(fx) > 0 ? 'x' : 'z', dir = axis === 'x' ? fx : fz;
-      S.box = this.physics.addBox(bb.min, bb.max, { ramp: { axis, dir } });
-    } else if(piece === 'cone'){ S.box = this.physics.addBox(bb.min, bb.min.clone().setY(bb.min.y + 0.6).add(new THREE.Vector3(GRID, 0, GRID))); }
-    else S.box = this.physics.addBox(bb.min, bb.max);
+    this._structBoxes(S);
     this.structures.push(S);
     return S;
   }
+  _structBoxes(S){
+    S.boxes.forEach(b => this.physics.removeBox(b)); S.boxes = [];
+    const q = S.mesh.rotation.y, cs = Math.cos(q), sn = Math.sin(q), p = S.mesh.position;
+    const fx = Math.round(sn), fz = Math.round(cs);
+    for(const b of pieceGeometry(S.piece, S.matKind, S.edit).boxes){
+      let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+      for(const [lx, lz] of [[b[0], b[2]], [b[3], b[2]], [b[0], b[5]], [b[3], b[5]]]){ const wx = lx * cs + lz * sn, wz = -lx * sn + lz * cs; x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); z0 = Math.min(z0, wz); z1 = Math.max(z1, wz); }
+      const extra = S.piece === 'ramp' ? { ramp: (() => { const axis = Math.abs(fx) > 0 ? 'x' : 'z'; return { axis, dir: axis === 'x' ? fx : fz }; })() } : undefined;
+      S.boxes.push(this.physics.addBox(new THREE.Vector3(p.x + x0, p.y + b[1], p.z + z0), new THREE.Vector3(p.x + x1, p.y + b[4], p.z + z1), extra));
+    }
+    S.box = S.boxes[0];
+    // AABB total (para a integridade estrutural)
+    S.aabb = new THREE.Box3(); S.boxes.forEach(b => { S.aabb.expandByPoint(b.min); S.aabb.expandByPoint(b.max); });
+  }
+  /** v16: edição (tecla Y) — parede: janela/porta/arco; piso: buraco; rampa: inverte */
+  editStructure(S, fromNet, to){
+    if(!S || !S.alive || S.editor) return false;
+    const list = EDITS[S.piece]; if(!list || list.length < 2) return false;
+    S.edit = to && list.includes(to) ? to : list[(list.indexOf(S.edit || 'full') + 1) % list.length];
+    S.mesh.geometry = pieceGeometry(S.piece, S.matKind, S.edit).geo;
+    S.mesh.rotation.y = S.q + (S.piece === 'ramp' && S.edit === 'flip' ? Math.PI : 0);
+    this._structBoxes(S);
+    this.particles.emit('build', S.mesh.position, { n: 6 });
+    this.audio.play('ui', S.mesh.position, { vol: 0.6, rate: 0.8 });
+    if(this.net && !fromNet && this.net.sendEdit) this.net.sendEdit(S);
+    return true;
+  }
+  editAim(){
+    const P = this.player; if(!P || !P.alive) return;
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    _ray.set(this.camera.position, dir); _ray.near = 0; _ray.far = this.tps.curDist + 22;
+    const hits = _ray.intersectObjects(this.structures.filter(s => s.alive).map(s => s.mesh), false);
+    const S = hits[0] && hits[0].object.userData.structure;
+    if(S && (!S.owner || S.owner === P || this.isAlly(S.owner, P))){ if(!this.editStructure(S)) this.toast('Esta peça não tem edições'); }
+    else this.toast('Aponta para uma construção tua para editar');
+  }
   removeStructure(S){
-    if(!S.alive) return; S.alive = false; this.scene.remove(S.mesh); this.physics.removeBox(S.box);
+    if(!S.alive) return; S.alive = false; this.scene.remove(S.mesh); S.boxes.forEach(b => this.physics.removeBox(b)); S.boxes = [];
     const i = this.world.raycastTargets.indexOf(S.mesh); if(i >= 0) this.world.raycastTargets.splice(i, 1);
     const ci = this.tps.colliders.indexOf(S.mesh); if(ci >= 0) this.tps.colliders.splice(ci, 1);
   }
@@ -390,21 +454,47 @@ export class Match {
     if(!S.alive) return;
     if(this.net && !fromNet) this.net.sendStructDamage(S, dmg, point);
     S.hp -= dmg;
-    this.particles.emit('wood', point, {});
-    if(S.hp <= 0){
-      S.alive = false; this.scene.remove(S.mesh); this.physics.removeBox(S.box);
-      this.world.raycastTargets.splice(this.world.raycastTargets.indexOf(S.mesh), 1);
-      const ci = this.tps.colliders.indexOf(S.mesh); if(ci >= 0) this.tps.colliders.splice(ci, 1);
-      // destroços físicos
-      for(let i = 0; i < 10; i++){
-        const d = new THREE.Mesh(new THREE.BoxGeometry(1.4 + Math.random() * 2, 0.4, 0.8 + Math.random()), S.mesh.material);
-        d.position.copy(S.mesh.position).add(new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8));
-        d.castShadow = true; this.scene.add(d);
-        this.physics.addBody(d, new THREE.Vector3((Math.random() - 0.5) * 14, 6 + Math.random() * 10, (Math.random() - 0.5) * 14), new THREE.Vector3(Math.random() * 8, Math.random() * 8, Math.random() * 8), { life: 3.5, r: 0.25, bounce: 0.3 });
-      }
-      this.particles.emit('dust', S.mesh.position, { n: 14, power: 2 });
-      this.audio.play('stepWood', S.mesh.position, { vol: 1, rate: 0.6 });
+    this.particles.emit(S.matKind === 'wood' ? 'wood' : 'stone', point, {});
+    // v16: peça danificada escurece (material partilhado → sem recompilar)
+    if(!S.damaged && S.hp < S.maxHp * 0.45){ S.damaged = true; S.mesh.material = buildMaterials(S.matKind, true); }
+    if(S.hp <= 0) this._breakStructure(S, true);
+  }
+  _breakStructure(S, checkSupport){
+    if(!S.alive) return;
+    this.removeStructure(S);
+    const mats = buildMaterials(S.matKind);
+    for(let i = 0; i < (this.quality === 'baixa' ? 5 : 10); i++){
+      const d = new THREE.Mesh(this._debrisGeo || (this._debrisGeo = new THREE.BoxGeometry(1, 1, 1)), mats[i % 2]);
+      d.scale.set(1.4 + Math.random() * 2, 0.4, 0.8 + Math.random());
+      d.position.copy(S.mesh.position).add(new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8));
+      d.castShadow = true; this.scene.add(d);
+      this.physics.addBody(d, new THREE.Vector3((Math.random() - 0.5) * 14, 6 + Math.random() * 10, (Math.random() - 0.5) * 14), new THREE.Vector3(Math.random() * 8, Math.random() * 8, Math.random() * 8), { life: 3.5, r: 0.25, bounce: 0.3 });
     }
+    this.particles.emit('dust', S.mesh.position, { n: 14, power: 2 });
+    this.audio.play('stepWood', S.mesh.position, { vol: 1, rate: S.matKind === 'metal' ? 1.2 : 0.6 });
+    if(checkSupport) this._checkSupport();
+  }
+  /** v16: integridade estrutural — peças que deixam de estar ligadas ao chão caem em cascata */
+  _checkSupport(){
+    const L = this.structures.filter(s => s.alive && !s.editor && s.aabb);
+    if(!L.length) return;
+    const own = new Set(); for(const t of this.structures) for(const b of t.boxes) own.add(b);
+    const grounded = (s) => {
+      const b = s.aabb, y = b.min.y;
+      for(const [x, z] of [[b.min.x + 0.5, b.min.z + 0.5], [b.max.x - 0.5, b.min.z + 0.5], [b.min.x + 0.5, b.max.z - 0.5], [b.max.x - 0.5, b.max.z - 0.5], [(b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2]]) if(y <= heightAt(x, z) + 1.6) return true;
+      // apoiado em geometria do mapa (prédios/rochas): caixa não-estrutura logo abaixo
+      for(const bx of this.physics.nearBoxes(b.min.x, b.min.z, b.max.x, b.max.z)) if(!own.has(bx) && Math.abs(bx.max.y - y) < 1.2 && bx.max.x > b.min.x && bx.min.x < b.max.x && bx.max.z > b.min.z && bx.min.z < b.max.z) return true;
+      return false;
+    };
+    const ok = new Set(), queue = [];
+    for(const s of L) if(grounded(s)){ ok.add(s); queue.push(s); }
+    const tmp = new THREE.Box3();
+    while(queue.length){
+      const s = queue.pop(); tmp.copy(s.aabb).expandByScalar(0.9);
+      for(const t of L) if(!ok.has(t) && tmp.intersectsBox(t.aabb)){ ok.add(t); queue.push(t); }
+    }
+    const fall = L.filter(s => !ok.has(s)).sort((a, b) => a.aabb.min.y - b.aabb.min.y);
+    fall.forEach((s, i) => setTimeout(() => { if(s.alive && this.active !== false) this._breakStructure(s, false); }, 60 + i * 55));
   }
   botBuildWall(bot, enemy){
     if(this.mode && !this.mode.build) return;
@@ -458,8 +548,9 @@ export class Match {
         if(!victim || victim === shooter) continue;
         if(this.isAlly(shooter, victim)){ this._tracer(muzzle, h.point, 0.04); continue; }
         const isHead = !!obj.userData.isHead;
-        const falloff = st.pellets ? THREE.MathUtils.clamp(1.3 - h.distance / 60, 0.35, 1) : 1;
-        const dmg = Math.round(st.dmg * (isHead ? st.head || 2 : 1) * falloff);
+        const falloff = st.pellets ? THREE.MathUtils.clamp(1.3 - h.distance / 60, 0.35, 1) : st.drop ? THREE.MathUtils.clamp(1.15 - h.distance / st.drop * 0.5, 0.55, 1) : 1;
+        const rm = RARITY[(shooter.rar && shooter.rar[shooter.weaponType]) || 0].mult;
+        const dmg = Math.round(st.dmg * rm * (isHead ? st.head || 2 : 1) * falloff);
         victim.takeDamage(dmg, shooter, isHead);
         anyHit = true; head = head || isHead;
         this.particles.emit('impact', h.point, { n: 5, color: 0xff5a5a, dust: 0xaa3333 });
@@ -467,6 +558,7 @@ export class Match {
         if(victim.isPlayer) this._hurtFx(shooter);
         if(victim.brain) victim.brain.hear(shooter.root.position);
       } else if(obj.userData.structure){ this.damageStructure(obj.userData.structure, st.dmg * 0.5, h.point); }
+      else if(obj.userData.bank){ obj.userData.bank.hit(obj, h.instanceId, st.dmg * 0.4, h.point, false); this.particles.emit('impact', h.point, { n: 5 }); }
       else { this.particles.emit('impact', h.point, { dir: h.face ? h.face.normal.clone().transformDirection(obj.matrixWorld) : undefined, n: 6, color: obj === this.world.ground ? 0x7a6a4a : undefined }); }
     }
     if(this.net && firstEnd) this.net.sendFire(shooter, shooter.weaponType, firstEnd, anyHit);
@@ -503,7 +595,7 @@ export class Match {
       if(r && this.sys && !r.destroyed){ r.amount *= this.sys.weakHit(actor, obj, h.instanceId, h.point, d); }
       else if(r && this.sys && this.sys.weak) this.sys.weak.sp.visible = false;
       this.audio.play('pickHit', h.point, { vol: 0.8, rate: r && r.kind === 'stone' ? 1.3 : 1 });
-      if(r){ actor.mats[r.kind] += r.amount; if(actor.isPlayer){ this._floatText(h.point, '+' + r.amount + (r.kind === 'wood' ? ' madeira' : ' pedra')); this._hitmarker(false); } }
+      if(r){ actor.mats[r.kind] = (actor.mats[r.kind] || 0) + r.amount; if(actor.isPlayer && r.amount > 0){ this._floatText(h.point, '+' + r.amount + ({ wood: ' madeira', stone: ' pedra', metal: ' metal' })[r.kind]); this._hitmarker(false); } }
       else this.particles.emit('impact', h.point, { n: 5 });
     }
     if(actor.isPlayer) this.tps.addTrauma(0.1);
@@ -531,9 +623,11 @@ export class Match {
     }
     // loot drop
     const wt = victim.slots.filter((s, i) => i > 0 && s);
-    wt.forEach((w, i) => this.world.spawnPickup(w, victim.root.position.clone().add(new THREE.Vector3(i * 2.5 - 2, 0, 1.5))));
-    this.world.spawnPickup('ammo', victim.root.position.clone().add(new THREE.Vector3(2, 0, -2)), 30);
-    if(victim.mats.wood > 0) this.world.spawnPickup('wood', victim.root.position.clone().add(new THREE.Vector3(-2, 0, -2)), victim.mats.wood);
+    const vy = { y: this.physics.groundAt(victim.root.position.x, victim.root.position.z, victim.root.position.y + 1, 0) + 1.5 };
+    wt.forEach((w, i) => this.world.spawnPickup(w, victim.root.position.clone().add(new THREE.Vector3(i * 2.5 - 2, 0, 1.5)), 1, { ...vy, rar: victim.rar[w] || 0 }));
+    this.world.spawnPickup('ammo', victim.root.position.clone().add(new THREE.Vector3(2, 0, -2)), 30, vy);
+    ['wood', 'stone', 'metal'].forEach((k, i) => { if(victim.mats[k] > 0) this.world.spawnPickup(k, victim.root.position.clone().add(new THREE.Vector3(-2 - i * 1.6, 0, -2)), victim.mats[k], vy); });
+    if(victim.grenades > 0) this.world.spawnPickup('grenade', victim.root.position.clone().add(new THREE.Vector3(0, 0, 3)), victim.grenades, vy);
     setTimeout(() => { victim.root.visible = false; }, 1600);
     const target = M.killTarget || KILLS_TO_WIN;
     if(victim.isPlayer) setTimeout(() => this.endMatch(false, killer), 1800);
@@ -542,28 +636,37 @@ export class Match {
   // ---------------- interação ----------------
   interact(){
     const P = this.player;
+    if(this.fs && this.fs.interact(P)) return;
     if(this.sys && this.sys.interact(P)) return;
     const c = this.world.chests.find(c => !c.opened && c.pos.distanceTo(P.root.position) < 7);
     if(c){ this.openChestBy(P, c); return; }
     const pk = this.world.pickups.find(p => p.pos.distanceTo(P.root.position) < 5);
-    if(pk) this.pickup(P, pk);
+    if(pk){ this.pickup(P, pk); return; }
+    if(this.fs) this.fs.attachZip(P);
   }
   openChestBy(actor, c){
     if(!this.world.openChest(c)) return;
     if(this.net) this.net.sendChest(c);
     this.audio.play('chest', c.pos, { vol: 0.9 });
     if(this.sys) this.sys.addGold(actor, 30 + Math.floor(Math.random() * 4) * 10, c.pos);
-    const weapons = ['rifle', 'shotgun', 'sniper'];
-    const w = weapons[Math.floor(Math.random() * (actor.isPlayer ? 3 : 2.4))];
+    // v16: tabela de loot com raridades + granadas/fenda
+    const pool = ['rifle', 'rifle', 'shotgun', 'shotgun', 'smg', 'smg', 'pistol', 'sniper'];
+    const w = pool[Math.floor(Math.random() * pool.length)], rar = rollRarity(c.elev ? 0.06 : 0);
     const spawnAt = (i) => c.pos.clone().add(new THREE.Vector3(Math.sin(c.group.rotation.y + i) * 3.5, 0, Math.cos(c.group.rotation.y + i) * 3.5));
+    const yy = { y: c.pos.y + 1.5 };
     if(actor.isPlayer){
-      this.world.spawnPickup(w, spawnAt(-0.6)); this.world.spawnPickup('ammo', spawnAt(0), 30); this.world.spawnPickup(Math.random() < 0.5 ? 'potion' : 'medkit', spawnAt(0.6));
-    } else { actor.give(w); actor.potions++; if(actor.slot === 0) actor.equip(actor.slots.indexOf(w)); }
+      this.world.spawnPickup(w, spawnAt(-0.6), 1, { ...yy, rar }); this.world.spawnPickup('ammo', spawnAt(0), 30, yy);
+      const r = Math.random(); this.world.spawnPickup(r < 0.4 ? 'potion' : r < 0.65 ? 'medkit' : r < 0.9 ? 'grenade' : 'rift', spawnAt(0.6), r >= 0.65 && r < 0.9 ? 2 : 1, yy);
+      actor.mats.wood += 30;
+    } else { actor.give(w, rar); actor.potions++; if(Math.random() < 0.4) actor.grenades++; if(actor.slot === 0) actor.equip(actor.slots.indexOf(w)); }
   }
   pickup(actor, pk){
     const t = pk.type;
-    if(WEAPON_STATS[t]){ const idx = actor.give(t); if(actor.isPlayer) { actor.equip(idx); this.toast(WEAPON_STATS[t].name + ' coletado'); } }
-    else if(t === 'ammo'){ ['rifle', 'shotgun', 'sniper'].forEach(k => actor.reserve[k] = (actor.reserve[k] || 0) + (k === 'rifle' ? 30 : k === 'shotgun' ? 6 : 3)); if(actor.isPlayer) this.toast('Munição +'); }
+    if(WEAPON_STATS[t]){ const idx = actor.give(t, pk.rar || 0); if(actor.isPlayer) { actor.equip(idx); this.toast(WEAPON_STATS[t].name + ' ' + RARITY[pk.rar || 0].label.toLowerCase() + ' coletado'); } }
+    else if(t === 'ammo'){ GUNS.forEach(k => actor.reserve[k] = (actor.reserve[k] || 0) + ({ rifle: 30, shotgun: 6, sniper: 3, smg: 36, pistol: 16 })[k]); if(actor.isPlayer) this.toast('Munição +'); }
+    else if(t === 'grenade'){ actor.grenades += pk.amount || 1; if(actor.isPlayer) this.toast('Granadas +' + (pk.amount || 1) + ' (X para lançar)'); }
+    else if(t === 'rift'){ actor.rifts += 1; if(actor.isPlayer) this.toast('Fenda Portátil (Z para usar)'); }
+    else if(t === 'metal'){ actor.mats.metal += pk.amount; }
     else if(t === 'potion' || t === 'shield'){ actor.potions++; if(actor.isPlayer) this.toast('Poção de escudo'); }
     else if(t === 'medkit'){ actor.medkits++; if(actor.isPlayer) this.toast('Kit médico'); }
     else if(t === 'wood' || t === 'stone'){ actor.mats[t] += pk.amount; }
@@ -573,7 +676,7 @@ export class Match {
   }
   onFootstep(actor, speed){
     if(actor.isPlayer || actor.root.position.distanceTo(this.camera.position) < 70){
-      const onWood = this.structures.some(s => s.alive && s.box && Math.abs(actor.body.pos.y - s.box.max.y) < 0.5 && actor.body.pos.x > s.box.min.x && actor.body.pos.x < s.box.max.x && actor.body.pos.z > s.box.min.z && actor.body.pos.z < s.box.max.z);
+      const bp = actor.body.pos, onWood = this.structures.some(s => s.alive && s.aabb && Math.abs(bp.y - s.aabb.max.y) < 0.6 && bp.x > s.aabb.min.x && bp.x < s.aabb.max.x && bp.z > s.aabb.min.z && bp.z < s.aabb.max.z);
       this.audio.play(onWood ? 'stepWood' : 'step', actor.root.position, { vol: (actor.isPlayer ? 0.18 : 0.35) * (speed > 20 ? 1.3 : 1) * (actor.crouch ? 0.4 : 1) });
       if(speed > 18 && this.quality !== 'baixa') this.particles.emit('dust', actor.root.position, { n: 2, power: 0.6 });
     }
@@ -609,7 +712,7 @@ export class Match {
       else if(!this.build.on && this.mouse.l && P.weaponType === 'pickaxe') this._playerFire();
       this._fireOnce = false;
       // coleta automática de munição/materiais
-      for(const pk of W.pickups.slice()) if(['ammo', 'wood', 'stone'].includes(pk.type) && pk.pos.distanceTo(P.root.position) < 3.5) this.pickup(P, pk);
+      for(const pk of W.pickups.slice()) if(['ammo', 'wood', 'stone', 'metal'].includes(pk.type) && pk.pos.distanceTo(P.root.position) < 3.5) this.pickup(P, pk);
     }
     // bots
     for(const b of this.bots){
@@ -627,6 +730,7 @@ export class Match {
       if(rr > lim){ bp.x *= lim / rr; bp.z *= lim / rr; a.root.position.x = bp.x; a.root.position.z = bp.z; }
     }
     if(this.sys) this.sys.update(dt);
+    if(this.fs) this.fs.update(dt);
     this.rules.update(dt);
     if(this.creative) this.creative.update(dt);
     // mira: ponto sob a mira (raycast do centro da câmera) → o personagem aponta para lá, a mira nunca fica sobre ele
@@ -635,9 +739,14 @@ export class Match {
     P.aimPoint = ah ? ah.point : aimOrigin.clone().addScaledVector(aimDir, 300);
     this.aimOrigin = aimOrigin; this.aimDir = aimDir;
     // construção: fantasma
-    if(this.build.on && this.build.ghost){ const pl = this._placement(P, this.build.piece, P.yaw); this.build.ghost.position.copy(pl.pos); this.build.ghost.rotation.copy(pl.rot); this.build.ghost.material.color.set(P.mats.wood >= 10 ? 0x60a5fa : 0xef4444); }
+    if(this.build.on && this.build.ghost){
+      const pl = this._placement(P, this.build.piece, P.yaw); this.build.ghost.position.copy(pl.pos); this.build.ghost.rotation.copy(pl.rot);
+      const kind = this.build.mat || 'wood', okM = (P.mats[kind] || 0) >= 10; this.build.ghost.material.color.set(okM ? ({ wood: 0x60a5fa, stone: 0x93c5fd, metal: 0xa5b4fc })[kind] : 0xef4444);
+      // v16: construção turbo (segurar o botão)
+      if(this.mouse.l && !this.paused && this.time - (this._lastPlace || 0) > 0.14){ this._lastPlace = this.time; this.placePiece(); }
+    }
     // estruturas crescendo
-    for(const s of this.structures) if(s.alive && s.growT < 1){ s.growT = Math.min(1, s.growT + dt * 2.2); const e = 1 - Math.pow(1 - s.growT, 3); s.mesh.scale.setScalar(0.05 + 0.95 * e); s.hp = Math.min(s.maxHp, s.hp + dt * 200); }
+    for(const s of this.structures) if(s.alive && s.growT < 1){ s.growT = Math.min(1, s.growT + dt * (s.grow || 2.2)); const e = 1 - Math.pow(1 - s.growT, 3); s.mesh.scale.setScalar(0.05 + 0.95 * e); s.hp = Math.min(s.maxHp, s.hp + dt * s.maxHp * 0.7 * (s.grow || 2.2) * 0.6); }
     // tempestade
     const ev = W.updateStorm(dt * (W.stormSpeed || 1), this.phase === 'play' && this.mode.storm);
     if(ev === 'shrink'){ $('storm-warning').classList.add('show'); setTimeout(() => $('storm-warning').classList.remove('show'), 3500); this.audio.play('thunder', null, { vol: 0.5 }); }
@@ -719,17 +828,20 @@ export class Match {
       const t = P.slots[i], st = WEAPON_STATS[t];
       el.classList.toggle('active', i === P.slot && !this.build.on);
       el.classList.toggle('empty', !t);
-      el.className = el.className.replace(/ rar-\w+/g, '') + (t ? ' rar-' + ({ pickaxe: 'common', rifle: 'rare', shotgun: 'epic', sniper: 'legendary' }[t]) : '');
+      el.className = el.className.replace(/ rar-\w+/g, '') + (t ? ' rar-' + (t === 'pickaxe' ? 'common' : RARITY[P.rar[t] || 0].css) : '');
       el.querySelector('.slot-name').textContent = st ? (st.short || 'PIC') : '';
       el.querySelector('.slot-ico').innerHTML = t ? SLOT_ICONS[t] : '';
     }
     ['wall', 'floor', 'ramp', 'cone'].forEach(p => { const e = $('bp-' + p); if(e) e.classList.toggle('active', this.build.on && this.build.piece === p); });
+    ['wood', 'stone', 'metal'].forEach(k => { const e = $('mat-' + k); if(e) e.classList.toggle('sel', this.build.on && (this.build.mat || 'wood') === k); });
+    const bm = $('bp-mat'); if(bm) bm.textContent = BUILD_MATS[this.build.mat || 'wood'].label;
   }
   _hudUpdate(dt){
     const P = this.player, W = this.world;
     _sty('hp-fill', 'width', P.hp + '%'); _txt('hp-num', Math.ceil(P.hp));
     _sty('sh-fill', 'width', P.shield + '%'); _txt('sh-num', Math.ceil(P.shield));
-    _txt('wood-count', P.mats.wood); _txt('stone-count', P.mats.stone);
+    _txt('wood-count', P.mats.wood); _txt('stone-count', P.mats.stone); _txt('metal-count', P.mats.metal || 0);
+    _txt('grenade-count', P.grenades || 0); _txt('rift-count', P.rifts || 0);
     _txt('potion-count', P.potions); _txt('medkit-count', P.medkits);
     const st = P.stats;
     _txt('ammo', st && st.mag ? `${P.mag[P.weaponType] ?? 0} / ${P.reserve[P.weaponType] ?? 0}` : '∞');
@@ -737,13 +849,14 @@ export class Match {
     if(P.reloading > 0) _sty('reload-fill', 'width', (1 - P.reloading / st.reloadTime) * 100 + '%');
     if(P.using > 0) _sty('reload-fill', 'width', (1 - P.using / (P.useKind === 'potion' ? 2 : 3.2)) * 100 + '%');
     _txt('reload-label', P.using > 0 ? (P.useKind === 'potion' ? 'BEBENDO' : 'CURANDO') : 'RECARREGANDO');
-    const alive = this.actors.filter(a => a.alive).length;
+    this._aliveT = (this._aliveT || 0) - dt; if(this._aliveT <= 0){ this._aliveT = 0.25; this._alive = this.actors.filter(a => a.alive).length; }
+    const alive = this._alive;
     _txt('player-count', alive); _txt('kill-count', P.kills);
     const S = W.storm;
     _txt('storm-timer', !this.mode.storm ? '--' : S.shrinking ? 'FECHANDO' : `${Math.max(0, Math.ceil(S.timer))}s`);
     // altímetro
     const alt = Math.max(0, Math.round(P.root.position.y - heightAt(P.root.position.x, P.root.position.z)));
-    _tog('altimeter', 'hide', P.mode === 'ground' || P.onBus);
+    _tog('altimeter', 'hide', P.mode === 'ground' || P.mode === 'zip' || P.onBus);
     _txt('alt-num', alt + ' m');
     const ah = $('alt-hint'); if(ah) ah.textContent = P.mode === 'freefall' ? (alt < 240 ? 'ESPAÇO: abrir planador · W mergulhar · S frear' : 'W mergulhar · S frear · A/D inclinar') : P.mode === 'glide' ? 'W acelerar · S planar · A/D curvar' : '';
     const gEl = $('gold-count'); if(gEl) gEl.textContent = P.gold || 0;
@@ -756,11 +869,12 @@ export class Match {
     _tog('crosshair', 'hide', this.phase === 'bus' || this.phase === 'over' || (P.aiming && P.weaponType === 'sniper'));
     // interação
     const c = W.chests.find(c => !c.opened && c.pos.distanceTo(P.root.position) < 7);
-    const pk = !c && W.pickups.find(p => p.pos.distanceTo(P.root.position) < 5 && !['ammo', 'wood', 'stone'].includes(p.type));
+    const pk = !c && W.pickups.find(p => p.pos.distanceTo(P.root.position) < 5 && !['ammo', 'wood', 'stone', 'metal'].includes(p.type));
     const hint = $('interact-hint');
     const drop = this.sys && this.sys.drops.find(d => d.landed && !d.opened && d.pos.distanceTo(P.root.position) < 6);
-    hint.classList.toggle('show', !!(c || pk || drop));
-    const hh = drop ? '<kbd>E</kbd> Abrir entrega aérea' : c ? '<kbd>E</kbd> Abrir baú' : pk ? `<kbd>E</kbd> Pegar ${WEAPON_STATS[pk.type] ? WEAPON_STATS[pk.type].name : pk.type === 'medkit' ? 'kit médico' : 'poção de escudo'}` : null;
+    const fh = !c && !pk && !drop && this.fs ? this.fs.hint(P) : null;
+    hint.classList.toggle('show', !!(c || pk || drop || fh));
+    const hh = fh ? fh : drop ? '<kbd>E</kbd> Abrir entrega aérea' : c ? '<kbd>E</kbd> Abrir baú' : pk ? `<kbd>E</kbd> Pegar ${WEAPON_STATS[pk.type] ? `<b style="color:#${RARITY[pk.rar || 0].color.toString(16).padStart(6, '0')}">${WEAPON_STATS[pk.type].name} (${RARITY[pk.rar || 0].label})</b>` : ({ medkit: 'kit médico', grenade: 'granadas', rift: 'Fenda Portátil' })[pk.type] || 'poção de escudo'}` : null;
     if(hh && hint._h !== hh){ hint._h = hh; hint.innerHTML = hh; }
     // bússola
     const deg = ((-this.tps.yaw * 180 / Math.PI) % 360 + 360 + 180) % 360;
@@ -778,23 +892,55 @@ export class Match {
     const scale = big ? W / (MAP_R * 2.2) : W / 260;
     const cx = big ? 0 : P.root.position.x, cz = big ? 0 : P.root.position.z;
     const tx = (x) => W / 2 - (x - cx) * scale, tz = (z) => H / 2 - (z - cz) * scale;
+    // v16: terreno/biomas/estradas/prédios pré-desenhados uma vez (antes: redesenhado a cada frame)
+    if(!this._mmBase) this._mmBase = this._minimapBase();
+    const S0 = this._mmBase.width, sc0 = S0 / (MAP_R * 2.2);
     ctx.fillStyle = '#1e5f7a'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#6a9a45'; ctx.beginPath(); ctx.arc(tx(0), tz(0), (MAP_R - 20) * scale, 0, Math.PI * 2); ctx.fill();
-    if(!this.world.empty){ ctx.fillStyle = '#d6c28f'; ctx.beginPath(); ctx.arc(tx(-60), tz(-40), 30 * scale, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2a6f8f'; ctx.beginPath(); ctx.arc(tx(-60), tz(-40), 26 * scale, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = '#e8dcc4'; for(const h of w.houses){ ctx.fillRect(tx(h.x) - h.W * scale / 2, tz(h.z) - h.D * scale / 2, h.W * scale, h.D * scale); }
+    const dw = S0 * scale / sc0; ctx.drawImage(this._mmBase, W / 2 - (MAP_R * 1.1 - cx) * scale, H / 2 - (MAP_R * 1.1 - cz) * scale, dw, dw);
+    if(this.world.empty){ ctx.fillStyle = '#e8dcc4'; for(const h of w.houses){ ctx.fillRect(tx(h.x) - h.W * scale / 2, tz(h.z) - h.D * scale / 2, h.W * scale, h.D * scale); } }
+    if(big && !this.world.empty){ ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; for(const L of LOCATIONS){ if(L.r > 110) continue; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(L.n.toUpperCase(), tx(L.x) + 1, tz(L.z) + 1); ctx.fillStyle = '#fff'; ctx.fillText(L.n.toUpperCase(), tx(L.x), tz(L.z)); } }
     ctx.fillStyle = '#fbbf24'; for(const c of w.chests) if(!c.opened){ ctx.fillRect(tx(c.pos.x) - 2, tz(c.pos.z) - 2, 4, 4); }
     // tempestade
     ctx.save(); ctx.fillStyle = 'rgba(124,58,237,0.45)'; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(tx(w.storm.cx), tz(w.storm.cz), w.storm.r * scale, 0, Math.PI * 2, true); ctx.fill('evenodd'); ctx.restore();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(tx(w.storm.cx), tz(w.storm.cz), w.storm.r * scale, 0, Math.PI * 2); ctx.stroke();
     if(w.storm.shrinking || w.storm.timer < 35){ ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(tx(w.storm.tcx), tz(w.storm.tcz), w.storm.target * scale, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     if(this.bus){ ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.moveTo(tx(this.busFrom.x), tz(this.busFrom.z)); ctx.lineTo(tx(this.busTo.x), tz(this.busTo.z)); ctx.stroke(); }
-    if(this.sys) for(const mk of this.sys.minimapMarks()){ ctx.fillStyle = mk.c; ctx.beginPath(); if(mk.sq) ctx.rect(tx(mk.x) - mk.s / 2, tz(mk.z) - mk.s / 2, mk.s, mk.s); else ctx.arc(tx(mk.x), tz(mk.z), mk.s / 2 + 0.5, 0, Math.PI * 2); ctx.fill(); if(mk.sq){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); } }
+    if(this.sys) for(const mk of this.sys.minimapMarks().concat(this.fs ? this.fs.minimapMarks(P) : [])){ ctx.fillStyle = mk.c; ctx.beginPath(); if(mk.sq) ctx.rect(tx(mk.x) - mk.s / 2, tz(mk.z) - mk.s / 2, mk.s, mk.s); else ctx.arc(tx(mk.x), tz(mk.z), mk.s / 2 + 0.5, 0, Math.PI * 2); ctx.fill(); if(mk.sq){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); } }
     if(this.mode.teams) for(const b of this.bots) if(b.alive && this.isAlly(P, b)){ ctx.fillStyle = '#60a5fa'; ctx.beginPath(); ctx.arc(tx(b.root.position.x), tz(b.root.position.z), 3.5, 0, Math.PI * 2); ctx.fill(); }
     // jogador
     const px = tx(P.root.position.x), pz = tz(P.root.position.z);
     ctx.save(); ctx.translate(px, pz); ctx.rotate(-this.tps.yaw + Math.PI);
     ctx.fillStyle = '#fbbf24'; ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(0, 3); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  _minimapBase(){
+    const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const ctx = cv.getContext('2d'), sc = S / (MAP_R * 2.2), w = this.world;
+    const tx = (x) => S / 2 - x * sc, tz = (z) => S / 2 - z * sc;
+    const img = ctx.createImageData(S, S), d = img.data;
+    for(let j = 0; j < S; j++) for(let i = 0; i < S; i++){
+      const x = (S / 2 - i) / sc, z = (S / 2 - j) / sc, r = Math.hypot(x, z), k = (j * S + i) * 4;
+      let c;
+      if(r > MAP_R - 12) c = [30, 95, 122];
+      else {
+        const h = heightAt(x, z), wa = w.waterAt ? w.waterAt(x, z) : null;
+        if(wa !== null && h < wa) c = [42, 111, 143];
+        else if(r > MAP_R - 38) c = [214, 194, 143];
+        else if(!w.empty && Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r) c = [222, 196, 140];
+        else if(h > 34) c = [236, 240, 244];
+        else { const g = Math.max(0, Math.min(1, h / 40)); c = [106 - g * 30, 154 - g * 40, 69 - g * 10]; }
+        const sh = (heightAt(x + 3, z + 3) - h) * 6; c = c.map(v => Math.max(0, Math.min(255, v - sh)));
+      }
+      d[k] = c[0]; d[k + 1] = c[1]; d[k + 2] = c[2]; d[k + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    if(!w.empty){
+      ctx.strokeStyle = 'rgba(160,130,90,.9)'; ctx.lineWidth = 3; for(const r of ROADS){ ctx.beginPath(); ctx.moveTo(tx(r[0]), tz(r[1])); ctx.lineTo(tx(r[2]), tz(r[3])); ctx.stroke(); }
+      ctx.fillStyle = '#7b7f86'; for(const Z of ZONES){ ctx.fillRect(tx(Z[2]), tz(Z[3]), (Z[2] - Z[0]) * sc, (Z[3] - Z[1]) * sc); }
+      ctx.fillStyle = '#d9cbb0'; for(const Z of [[175, 155, 207, 187], [223, 155, 255, 187], [175, 205, 207, 237], [223, 205, 255, 237], [175, -245, 223, -213], [231, -250, 263, -218], [-300, 86, -268, 102]]) ctx.fillRect(tx(Z[2]), tz(Z[3]), (Z[2] - Z[0]) * sc, (Z[3] - Z[1]) * sc);
+      if(this.fs){ ctx.strokeStyle = '#111827'; ctx.lineWidth = 1.2; ctx.setLineDash([3, 2]); for(const Z of this.fs.zips){ ctx.beginPath(); ctx.moveTo(tx(Z.a.x), tz(Z.a.z)); ctx.lineTo(tx(Z.b.x), tz(Z.b.z)); ctx.stroke(); } ctx.setLineDash([]); }
+    }
+    if(!w.empty){ ctx.fillStyle = '#e8dcc4'; for(const h of w.houses){ ctx.fillRect(tx(h.x) - h.W * sc / 2, tz(h.z) - h.D * sc / 2, h.W * sc, h.D * sc); } }
+    return cv;
   }
   _nametags(){
     const layer = $('nametag-layer'); if(!layer) return;
@@ -842,5 +988,7 @@ export const SLOT_ICONS = {
   pickaxe: '<svg viewBox="0 0 48 48"><path d="M8 14c8-7 22-9 32-4-7 0-13 2-18 6l16 22-4 3-16-22c-4 3-7 7-8 12-3-6-3-12-2-17z" fill="currentColor"/></svg>',
   rifle: '<svg viewBox="0 0 64 32"><path d="M2 12h34l2-3h10l2 3h12v5H50l-2 2H38l-4 9h-7l2-9H14l-3 5H4l2-5H2z" fill="currentColor"/></svg>',
   shotgun: '<svg viewBox="0 0 64 32"><path d="M2 13h44v2h16v4H46v1H30l-3 3H16l-5 6H4l5-8H2z" fill="currentColor"/><rect x="30" y="17" width="12" height="3" fill="currentColor"/></svg>',
-  sniper: '<svg viewBox="0 0 64 32"><path d="M2 15h40l2-2h18v3H44v3H26l-4 8h-6l3-8H10l-4 5H1l3-6z" fill="currentColor"/><rect x="20" y="7" width="16" height="5" rx="2" fill="currentColor"/></svg>'
+  sniper: '<svg viewBox="0 0 64 32"><path d="M2 15h40l2-2h18v3H44v3H26l-4 8h-6l3-8H10l-4 5H1l3-6z" fill="currentColor"/><rect x="20" y="7" width="16" height="5" rx="2" fill="currentColor"/></svg>',
+  smg: '<svg viewBox="0 0 64 32"><path d="M8 10h30l2-2h6v3h8v6h-8v2H34l-2 3h-4l-2 8h-7l2-8h-5l-4 4H6l4-6H4v-6h4z" fill="currentColor"/><rect x="24" y="19" width="5" height="10" fill="currentColor"/></svg>',
+  pistol: '<svg viewBox="0 0 64 32"><path d="M14 8h36v8H34l-3 3h-6l-4 11h-9l4-12h-2z" fill="currentColor"/><rect x="46" y="10" width="6" height="3" fill="currentColor"/></svg>'
 };

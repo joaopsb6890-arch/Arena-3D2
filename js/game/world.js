@@ -9,22 +9,60 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { Mat } from '../engine/materials.js';
 import { getSurface } from '../engine/textures.js';
 import { Wind } from '../anim/secondary.js';
+import { planPOIs, buildPOIs, ZONES, ROADS, LOCATIONS, palmGeo, cactusGeo, bushGeo, flowerGeo } from './pois.js';
+import { createWeapon, RARITY, GUNS, rollRarity } from './weapons.js';
 
 export const MAP_R = 420;
 export const GRID = 16, WALL_H = 13;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
+// v16: relevo novo — Pico Nevado (montanha com planalto no topo), dunas no deserto e o Rio Serpente
+export const MOUNTAIN = { x: -245, z: -235, r: 118, h: 80 };
+export const DESERT = { x: -300, z: 140, r: 130 };
+export const RIVER = [[-172, -152], [-120, -135], [-85, -100], [-68, -66]];
+export const WATER_Y = -1.4;
+function riverDist(x, z){
+  if(x < -190 || x > -50 || z < -170 || z > -48) return 1e9;
+  let best = 1e9;
+  for(let i = 0; i < RIVER.length - 1; i++){
+    const [ax, az] = RIVER[i], [bx, bz] = RIVER[i + 1], dx = bx - ax, dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+    const d = Math.hypot(x - ax - dx * t, z - az - dz * t); if(d < best) best = d;
+  }
+  return best;
+}
 export function heightAt(x, z){
   const d = Math.hypot(x, z);
   if(FLAT_WORLD) return -Math.max(0, d - MAP_R + 30) * 0.6;   // ilha plana do Modo Criativo / mapas criados
   let h = 5.5 * Math.sin(x / 95) * Math.cos(z / 120) + 2.4 * Math.sin(x / 41 + z / 57) + 1.2 * Math.sin(z / 23 - x / 31);
   h *= THREE.MathUtils.smoothstep(d, 40, 140);          // centro plano
+  // montanha: perfil suave + cristas; planalto no topo para a cabana
+  const mx = x - MOUNTAIN.x, mz = z - MOUNTAIN.z, md2 = mx * mx + mz * mz;
+  if(md2 < MOUNTAIN.r * MOUNTAIN.r){
+    const u = 1 - Math.sqrt(md2) / MOUNTAIN.r, e = u * u * (3 - 2 * u);
+    const ridge = (Math.sin(Math.atan2(mz, mx) * 5 + u * 3) * 0.5 + Math.sin(x / 13 + z / 17) * 0.3) * u * (1 - u) * 26;
+    h += Math.min(MOUNTAIN.h, MOUNTAIN.h * Math.pow(e, 1.25) * 1.08 + ridge);
+  }
+  // dunas
+  const dx = x - DESERT.x, dz = z - DESERT.z, dd2 = dx * dx + dz * dz;
+  if(dd2 < DESERT.r * DESERT.r){ const w = 1 - Math.sqrt(dd2) / DESERT.r; h += (Math.sin(x / 19 + z / 31) * 2.2 + Math.sin(x / 7.3 - z / 11) * 0.5) * Math.min(1, w * 2.5); }
   // achata pontos de interesse
   for(const f of FLATS){ const dd = Math.hypot(x - f[0], z - f[1]); if(dd < f[2] + 18){ const k = THREE.MathUtils.smoothstep(dd, f[2], f[2] + 18); h = h * k + f[3] * (1 - k); } }
+  // leito do rio (depois dos achatamentos, para a água atravessar tudo)
+  const rd = riverDist(x, z);
+  if(rd < 17){ const k = THREE.MathUtils.smoothstep(rd, 5, 17); h = Math.min(h, h * k + -3.1 * (1 - k)); }
   // borda da ilha afunda
   h -= Math.max(0, d - MAP_R + 30) * 0.6;
   return h;
 }
+/** v16: superfície da água em (x,z) ou null (lago + rio) */
+export function waterAt(x, z){
+  if(FLAT_WORLD) return null;
+  if(Math.hypot(x + 60, z + 40) < 29) return WATER_Y;
+  if(riverDist(x, z) < 9) return WATER_Y;
+  return null;
+}
+export { riverDist };
 const FLATS = [];   // [x,z,r,h]
 let FLAT_WORLD = false;
 
@@ -75,15 +113,27 @@ export class World {
     this.t = 0;
     _rng = 1234567;
     if(this.empty){ this.housePlan = []; this.fires = []; }
-    else this._planHouses();
+    else { this._planHouses(); planPOIs(FLATS); }
     this._ground();
     this._water();
-    if(!this.empty){ this._houses(); this._trees(); this._rocks(); }
+    if(!this.empty){
+      this._houses();
+      // v16: locais nomeados (cidade, fábrica, posto, farol, pico, ponte)
+      this._staticMerge = [];
+      this.poi = buildPOIs(this, heightAt);
+      for(const g of this._staticMerge) g.traverse(o => { if(o.isMesh){ if(!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); if(o.geometry.boundingSphere.radius > 2.5 && o.material !== this.poi.mats.glass) this.raycastTargets.push(o); } });
+      this._mergeStatic(this._staticMerge);
+      this.poi.loot.chests.forEach(([x, z, r, y]) => this.addChest(x, z, r, y));
+      this.poi.loot.floor.forEach(([x, y, z]) => { const t = Math.random(); if(t < 0.62) this.spawnPickup(GUNS[Math.floor(Math.random() * GUNS.length)], V(x, 0, z), 1, { y: y + 1.5, rar: rollRarity() }); else this.spawnPickup(['potion', 'medkit', 'ammo', 'grenade'][Math.floor(Math.random() * 4)], V(x, 0, z), t < 0.8 ? 1 : 2, { y: y + 1.5 }); });
+      this._river();
+      this._trees(); this._rocks(); this._props();
+    }
     if(this.empty || opts.editable) this._emptyInstances();
     this._grass();
     if(!this.empty) this._campfires();
     this._storm();
   }
+  waterAt(x, z){ return waterAt(x, z); }
   // ---------- terreno ----------
   _planHouses(){
     this.housePlan = [];
@@ -96,10 +146,11 @@ export class World {
     FLATS.push([-60, -40, 26, -2.2]); // lago
   }
   _ground(){
-    const seg = this.q === 'baixa' ? 120 : 220;
+    const seg = this.q === 'baixa' ? 150 : this.q === 'media' ? 220 : 280;
     const g = new THREE.PlaneGeometry(MAP_R * 2.4, MAP_R * 2.4, seg, seg); g.rotateX(-Math.PI / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
     const cA = new THREE.Color(0x5f8f3e), cB = new THREE.Color(0x7aa04a), cDirt = new THREE.Color(0x8a7550), cSand = new THREE.Color(0xcdb98a);
+    const cDes = new THREE.Color(0xe0c48c), cSnow = new THREE.Color(0xf1f5f9), cBed = new THREE.Color(0x7c6f55), cRoad = new THREE.Color(0x9a8260), cPave = new THREE.Color(0x6b6f76);
     for(let i = 0; i < pos.count; i++){
       const x = pos.getX(i), z = pos.getZ(i), h = heightAt(x, z); pos.setY(i, h);
       const n = Math.sin(x * 0.05) * Math.cos(z * 0.043) * 0.5 + 0.5;
@@ -108,6 +159,14 @@ export class World {
       if(d > MAP_R - 40) c.lerp(cSand, THREE.MathUtils.smoothstep(d, MAP_R - 40, MAP_R - 15));
       for(const hp of this.housePlan){ const dd = Math.hypot(x - hp.x, z - hp.z); if(dd < 30) c.lerp(cDirt, (1 - dd / 30) * 0.5); }
       const lake = Math.hypot(x + 60, z + 40); if(lake < 34) c.lerp(cSand, THREE.MathUtils.smoothstep(34 - lake, 0, 8));
+      if(!this.empty){
+        // v16: biomas
+        const dD = Math.hypot(x - DESERT.x, z - DESERT.z); if(dD < DESERT.r + 20) c.lerp(cDes, THREE.MathUtils.smoothstep(DESERT.r + 20 - dD, 0, 35));
+        if(h > 34) c.lerp(cSnow, THREE.MathUtils.smoothstep(h, 34, 46));
+        const rd = riverDist(x, z); if(rd < 16) c.lerp(rd < 9 ? cBed : cSand, THREE.MathUtils.smoothstep(16 - rd, 0, 5) * 0.85);
+        for(const r of ROADS){ const dx = r[2] - r[0], dz = r[3] - r[1], t = Math.max(0, Math.min(1, ((x - r[0]) * dx + (z - r[1]) * dz) / (dx * dx + dz * dz))); const dr = Math.hypot(x - r[0] - dx * t, z - r[1] - dz * t); if(dr < 6) c.lerp(cRoad, (1 - dr / 6) * 0.7); }
+        for(const Z of ZONES){ if(x > Z[0] - 4 && x < Z[2] + 4 && z > Z[1] - 4 && z < Z[3] + 4 && Z !== ZONES[3] && Z !== ZONES[4]) c.lerp(cPave, 0.8); }
+      }
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     g.computeVertexNormals();
@@ -270,9 +329,9 @@ export class World {
       this.addChest(hp.x + (idx % 2 ? -W / 4 : W / 4), hp.z + D / 4, Math.PI);
       this.houses.push({ ...hp, W, D, center: V(hp.x, 0, hp.z) });
   }
-  addChest(x, z, rot){
+  addChest(x, z, rot, yOver){
     const inHouse = this.housePlan.some(h => Math.abs(x - h.x) < h.w * GRID / 2 && Math.abs(z - h.z) < h.d * GRID / 2);
-    const y = heightAt(x, z) + (inHouse ? 0.3 : 0);
+    const y = yOver !== undefined ? yOver : heightAt(x, z) + (inHouse ? 0.3 : 0);
     const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = rot || 0;
     const wood = Mat.wood(0x8b5a2b), gold = Mat.metal(0xf5c542, 0.25);
     const base = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.8, 2.2), wood); base.position.y = 0.9;
@@ -288,7 +347,7 @@ export class World {
     g.add(base, lidPivot, lock, glow);
     g.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
     this.group.add(g);
-    const chest = { group: g, lid: lidPivot, glow, pos: g.position.clone(), opened: false, openT: 0 };
+    const chest = { group: g, lid: lidPivot, glow, pos: g.position.clone(), opened: false, openT: 0, elev: yOver !== undefined && yOver - heightAt(x, z) > 3 };
     chest.emitter = this.particles.addEmitter({ type: 'magic', rate: 5, pos: g.position.clone().add(V(0, 2.2, 0)), opt: { color: 0xffd36a } });
     this.chests.push(chest);
     chest.collider = this.physics.addCircle(x, z, 1.6, g.position.y + 1.8);
@@ -366,11 +425,13 @@ export class World {
       let x, z, ok = false, tries = 0;
       while(!ok && tries++ < 40){ const ang = rnd() * Math.PI * 2, d = 30 + Math.sqrt(rnd()) * (MAP_R - 60); x = Math.cos(ang) * d; z = Math.sin(ang) * d; ok = this._freeSpot(x, z, 14); }
       if(!ok) continue;
-      const y = heightAt(x, z), sc = rr(0.8, 1.35);
+      const pineType0 = i >= half, y0 = heightAt(x, z);
+      if(Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r - 10 || y0 > 60 || (!pineType0 && y0 > 30)) continue;
+      const y = y0, sc = rr(0.8, 1.35);
       p.set(x, y - 0.3, z); q.setFromEuler(new THREE.Euler(0, rnd() * 6.28, 0)); s.set(sc, sc * rr(0.9, 1.15), sc); m.compose(p, q, s);
       const pineType = i >= half;
       const tree = { x, z, y, sc, hp: 120, alive: true, pine: pineType, idx: pineType ? b : a, matrix: m.clone() };
-      if(pineType){ iPT.setMatrixAt(b, m); iP.setMatrixAt(b, m); c.setHSL(0.33 + rr(-0.03, 0.03), 0.45, 0.28 + rr(-0.04, 0.04)); iP.setColorAt(b, c); b++; }
+      if(pineType){ iPT.setMatrixAt(b, m); iP.setMatrixAt(b, m); c.setHSL(0.33 + rr(-0.03, 0.03), 0.45, 0.28 + rr(-0.04, 0.04)); if(y > 30) c.lerp(new THREE.Color(0xe8f0f5), THREE.MathUtils.smoothstep(y, 30, 48) * 0.7); iP.setColorAt(b, c); b++; }
       else { iT.setMatrixAt(a, m); iL.setMatrixAt(a, m); c.setHSL(0.27 + rr(-0.04, 0.05), 0.5, 0.36 + rr(-0.05, 0.05)); iL.setColorAt(a, c); a++; }
       tree.collider = this.physics.addCircle(x, z, 1.1 * sc, y + 14);
       this.trees.push(tree);
@@ -480,6 +541,11 @@ export class World {
     for(const h of this.housePlan) if(Math.abs(x - h.x) < h.w * GRID / 2 + r && Math.abs(z - h.z) < h.d * GRID / 2 + r) return false;
     if(Math.hypot(x + 60, z + 40) < 34 + r * 0.5) return false;
     if(Math.hypot(x, z + 18) < 12 + r) return false;
+    if(!this.empty){
+      for(const Z of ZONES) if(x > Z[0] - r && x < Z[2] + r && z > Z[1] - r && z < Z[3] + r) return false;
+      if(riverDist(x, z) < 11 + r * 0.5) return false;
+      if(Math.abs(z + 117.5) < 6 + r && x > -134 && x < -70) return false;
+    }
     return true;
   }
   _grass(){
@@ -495,12 +561,59 @@ export class World {
     for(let i = 0; i < n; i++){
       const ang = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 300, x = Math.cos(ang) * d, z = Math.sin(ang) * d;
       if(!this._freeSpot(x, z, 1)) continue;
+      if(!this.empty && (Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r || heightAt(x, z) > 32)) continue;
       const sc = rr(0.7, 1.5);
       p.set(x, heightAt(x, z) - 0.05, z); q.setFromEuler(new THREE.Euler(0, rnd() * 6.28, 0)); s.set(sc, sc * rr(0.8, 1.3), sc); m.compose(p, q, s);
       im.setMatrixAt(k, m); c.setHSL(0.24 + rr(-0.03, 0.04), 0.5, 0.3 + rr(-0.05, 0.08)); im.setColorAt(k, c); k++;
     }
     im.count = k; im.receiveShadow = true; im.castShadow = false; im.userData.noProbe = true;
     this.group.add(im); this.grass = im;
+  }
+  // v16: fita de água do Rio Serpente (mesmo material do lago)
+  _river(){
+    const curve = new THREE.CatmullRomCurve3(RIVER.map(([x, z]) => V(x, WATER_Y, z)));
+    const N = 90, W = 11, pos = [], uv = [], idx = [];
+    for(let i = 0; i <= N; i++){
+      const t = i / N * 0.97, p = curve.getPointAt(t), tg = curve.getTangentAt(t), nx = -tg.z, nz = tg.x, l = Math.hypot(nx, nz) || 1;
+      pos.push(p.x + nx / l * W, WATER_Y, p.z + nz / l * W, p.x - nx / l * W, WATER_Y, p.z - nz / l * W);
+      uv.push(0, t * 12, 1, t * 12);
+      if(i < N){ const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    if(g.attributes.normal.getY(0) < 0){ idx.reverse(); g.setIndex(idx); g.computeVertexNormals(); }
+    this.river = new THREE.Mesh(g, this.lake.material); this.river.userData.noProbe = true; this.river.receiveShadow = true;
+    this.group.add(this.river);
+    this.soundSpots.push({ id: 'river', name: 'water', pos: V(-102, 0, -118), vol: 0.45 });
+  }
+  // v16: arbustos (esconderijo), flores, palmeiras e catos — tudo instanciado
+  _props(){
+    const q = this.q, M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), P = new THREE.Vector3(), E = new THREE.Euler();
+    const inst = (geo, mat, list, opts) => {
+      if(!list.length) return null;
+      const im = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((o, i) => { P.set(o.x, o.y, o.z); Q.setFromEuler(E.set(0, o.r, 0)); S.setScalar(o.s); M4.compose(P, Q, S); im.setMatrixAt(i, M4); });
+      im.castShadow = !!opts.cast; im.receiveShadow = true; if(opts.noProbe) im.userData.noProbe = true;
+      this.group.add(im); if(opts.target) this.raycastTargets.push(im); return im;
+    };
+    const vmat = Mat.vcolor('veg', { roughness: 0.85, metalness: 0 });
+    const pick = (n, fn, r) => { const out = []; for(let i = 0; i < n * 4 && out.length < n; i++){ const p = fn(); if(p && this._freeSpot(p[0], p[1], r || 3)) out.push({ x: p[0], z: p[1], y: heightAt(p[0], p[1]), r: rnd() * 6.28, s: rr(0.8, 1.25) }); } return out; };
+    const inDesert = (x, z) => Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r - 8;
+    const ring = (r0, r1) => () => { const a = rnd() * Math.PI * 2, d = r0 + Math.sqrt(rnd()) * (r1 - r0); return [Math.cos(a) * d, Math.sin(a) * d]; };
+    // arbustos: bloqueiam a visão (entram no raycast da IA? não — só visual), sem colisão, como no Fortnite
+    const bushes = pick(q === 'baixa' ? 60 : 130, () => { const p = ring(30, MAP_R - 50)(); return inDesert(p[0], p[1]) || heightAt(p[0], p[1]) > 32 ? null : p; }, 2);
+    this.bushMesh = inst(bushGeo(), windify(vmat.clone(), 0.12, 'bush'), bushes, { cast: q !== 'baixa' });
+    this.bushes = bushes;
+    const flowers = pick(q === 'baixa' ? 150 : 420, () => { const p = ring(20, 300)(); return inDesert(p[0], p[1]) ? null : p; }, 1);
+    inst(flowerGeo(), windify(vmat.clone(), 0.5, 'flower'), flowers, { noProbe: true });
+    // catos (colisão + coleta de madeira)
+    const cacti = pick(40, () => { const a = rnd() * 6.28, d = Math.sqrt(rnd()) * (DESERT.r - 12); return [DESERT.x + Math.cos(a) * d, DESERT.z + Math.sin(a) * d]; }, 4);
+    const cm = inst(cactusGeo(), vmat, cacti, { cast: true, target: true });
+    // palmeiras na praia e no deserto
+    const palms = pick(34, () => { if(rnd() < 0.35){ const a = rnd() * 6.28, d = Math.sqrt(rnd()) * (DESERT.r - 15); return [DESERT.x + Math.cos(a) * d, DESERT.z + Math.sin(a) * d]; } const a = rnd() * 6.28, d = MAP_R - 42 + rnd() * 14; return [Math.cos(a) * d, Math.sin(a) * d]; }, 6);
+    const pm = inst(palmGeo(), windify(vmat.clone(), 0.04, 'palm'), palms, { cast: true, target: true });
+    this.extraRes = [];
+    const reg = (im, list, kind, hp, rad, top) => { if(!im) return; im.userData.extraRes = true; list.forEach((o, i) => this.extraRes.push({ im, idx: i, kind, hp, alive: true, x: o.x, y: o.y, z: o.z, collider: this.physics.addCircle(o.x, o.z, rad * o.s, o.y + top) })); };
+    reg(cm, cacti, 'wood', 80, 1.1, 9); reg(pm, palms, 'wood', 120, 0.7, 15);
   }
   _campfires(){
     this.fires = [];
@@ -564,6 +677,13 @@ export class World {
   }
   // ---------- destruição ----------
   hitResource(obj, instanceId, point){
+    if(obj.userData.bank) return obj.userData.bank.hit(obj, instanceId, 50, point, true);
+    if(obj.userData.extraRes){
+      const it = this.extraRes.find(e => e.im === obj && e.idx === instanceId); if(!it || !it.alive) return null;
+      it.hp -= 35; this.particles.emit('wood', point, { count: 10 });
+      if(it.hp <= 0){ it.alive = false; obj.setMatrixAt(it.idx, new THREE.Matrix4().makeScale(0, 0, 0)); obj.instanceMatrix.needsUpdate = true; this.physics.removeCircle(it.collider); this.particles.emit('wood', point, { count: 30 }); }
+      return { kind: 'wood', amount: 9, destroyed: !it.alive };
+    }
     let list = null;
     const ed = !!obj.userData.ed, isRock = obj === this.rockMesh || obj === this.edRock;
     if(isRock) list = this.rocks.filter(r => r.idx === instanceId && !!r.ed === ed);
@@ -583,24 +703,37 @@ export class World {
     return { kind: isRock ? 'stone' : 'wood', amount: isRock ? 12 : 10, destroyed: !it.alive };
   }
   // ---------- loot no chão ----------
-  spawnPickup(type, pos, amount){
+  spawnPickup(type, pos, amount, opts){
+    opts = opts || {};
     const g = new THREE.Group();
-    const colors = { ammo: 0x94a3b8, shield: 0x3b82f6, potion: 0x3b82f6, medkit: 0xef4444, wood: 0xa16207, stone: 0x9ca3af, rifle: 0x22c55e, shotgun: 0x3b82f6, sniper: 0xa855f7 };
-    const c = colors[type] || 0xffffff;
+    const colors = { ammo: 0x94a3b8, shield: 0x3b82f6, potion: 0x3b82f6, medkit: 0xef4444, wood: 0xa16207, stone: 0x9ca3af, metal: 0x64748b, grenade: 0x65a30d, rift: 0xa855f7 };
+    const isGun = GUNS.includes(type), rar = isGun ? (opts.rar ?? 0) : -1;
+    const c = isGun ? RARITY[rar].color : (colors[type] || 0xffffff);
     let mesh;
     if(type === 'potion' || type === 'shield'){ mesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), Mat.glass(0x60a5fa)); const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.6, 10), Mat.glass(0x60a5fa)); neck.position.y = 0.8; g.add(neck); }
     else if(type === 'medkit'){ mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1, 0.6), Mat.paint(0xf1f5f9)); const cr = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.25, 0.62), Mat.paint(0xef4444)); const cr2 = cr.clone(); cr2.rotation.z = Math.PI / 2; g.add(cr, cr2); }
-    else if(['rifle', 'shotgun', 'sniper'].includes(type)){ mesh = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 0.3), Mat.metal(0x333a40, 0.4)); }
+    else if(isGun){
+      // v16: modelo real da arma (reutiliza um modelo em cache por tipo → clone partilha geometrias/materiais)
+      this._gunCache = this._gunCache || {};
+      if(!this._gunCache[type]) this._gunCache[type] = createWeapon(type).group;
+      mesh = this._gunCache[type].clone(); mesh.scale.multiplyScalar(1.5); mesh.rotation.set(0, 0, 0.25);
+    }
+    else if(type === 'grenade'){ mesh = new THREE.Mesh(new THREE.SphereGeometry(0.55, 14, 10), Mat.paint(0x4d7c0f)); const pin = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 12), Mat.metal(0xd1d5db, 0.3)); pin.position.y = 0.65; g.add(pin); }
+    else if(type === 'rift'){ mesh = new THREE.Mesh(new THREE.TorusKnotGeometry(0.45, 0.16, 48, 8), Mat.emissive(0xc084fc, 2.2)); }
     else mesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.8), Mat.paint(c));
     g.add(mesh);
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.2, 1.5, 32), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = -1.1; g.add(ring);
-    // sem PointLight (evita recompilar shaders a cada item) — brilho via anel aditivo
     ring.material.blending = THREE.AdditiveBlending;
-    g.position.copy(pos); g.position.y = heightAt(pos.x, pos.z) + 1.5;
-    g.traverse(o => { if(o.isMesh) o.castShadow = true; });
+    // v16: feixe de loot (raridade) nas armas
+    if(isGun && rar >= 1){
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.9, 14, 12, 1, true), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.22 + rar * 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      beam.position.y = 5.8; beam.userData.noProbe = true; g.add(beam);
+    }
+    g.position.copy(pos); g.position.y = opts.y !== undefined ? opts.y : heightAt(pos.x, pos.z) + 1.5;
+    g.traverse(o => { if(o.isMesh && o !== ring) o.castShadow = true; });
     this.group.add(g);
-    const pk = { type, amount: amount || 1, group: g, pos: g.position.clone(), t: Math.random() * 6 };
+    const pk = { type, amount: amount || 1, group: g, pos: g.position.clone(), t: Math.random() * 6, rar: Math.max(0, rar) };
     this.pickups.push(pk); return pk;
   }
   removePickup(pk){ this.group.remove(pk.group); this.pickups.splice(this.pickups.indexOf(pk), 1); }
@@ -616,6 +749,12 @@ export class World {
       else if(!c.opened) c.glow.intensity = 2.5 + Math.sin(this.t * 3) * 0.8;
       else c.glow.intensity *= 0.97;
     }
-    for(const p of this.pickups){ p.t += dt; p.group.children[0].rotation.y += dt * 1.5; p.group.position.y = p.pos.y + Math.sin(p.t * 2) * 0.25; }
+    // v16: só anima/mostra loot perto da câmara (o resto fica invisível → menos draw calls)
+    const cp = camera ? camera.position : null;
+    for(const p of this.pickups){
+      if(cp){ const dx = p.pos.x - cp.x, dz = p.pos.z - cp.z, vis = dx * dx + dz * dz < 190 * 190; p.group.visible = vis; if(!vis) continue; }
+      p.t += dt; p.group.rotation.y += dt * 1.5; p.group.position.y = p.pos.y + Math.sin(p.t * 2) * 0.25;
+    }
+    if(this.poi && this.poi.beam) this.poi.beam.rotation.y += dt * 0.7;
   }
 }

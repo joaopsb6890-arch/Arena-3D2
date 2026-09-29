@@ -7,6 +7,31 @@ Projeto em Three.js r160 com ES modules.
 - Depois de editar `js/`, é preciso regenerar o `index.html` com `npm i esbuild && node tools/build.mjs`.
 Parâmetros de URL: `?q=baixa|media|alta|ultra` (qualidade) e `?manual=1` (desliga o rAF, para testes automatizados via `window.__simulate(n, dt)`). A tecla F8 mostra FPS, draw calls e triângulos.
 
+## Novidades v16 — Mapa, sistemas Fortnite, construção e planadores
+
+**Mapa**
+- 12 locais com nome (faixa ao entrar): Torres Tortas (prédios de 3 andares com escadas), Fábrica Ferrugem (armazéns, contentores, gruas), Posto Poeira (bomba de gasolina e loja no deserto), Pico Nevado (montanha com cabana), Farol Solitário (farol com feixe rotativo), Rio Serpente com ponte, Lago Sereno, Praça Central, etc.
+- Biomas: deserto (cactos, palmeiras), montanha com neve, pinheiros nevados, arbustos e flores; estradas; rio com água que abranda o movimento.
+- Minimapa pré-renderizado (terreno sombreado, biomas, estradas, prédios, tirolesas) e nomes dos locais no mapa grande.
+
+**Sistemas novos**
+- Raridades de armas (comum → lendário, +dano) com cores no inventário e no chão; SMG e pistola novas; queda de dano com a distância.
+- Granadas (X), Fenda Portátil (Z — volta a lançar-te no ar), tirolesas (E), lhamas de loot, caixas de munição, marcação/ping (botão do meio), baús em telhados com melhor loot, feixes de luz nos itens raros.
+- Explosões danificam jogadores, construções e prédios do mapa (prédios destrutíveis por peça).
+
+**Construção**
+- 3 materiais: madeira (rápida, 150 PV), pedra (300 PV), metal (500 PV, lenta) — botão direito/N troca; modelos com moldura e texturas próprias; peças danificadas mudam de aspeto.
+- Edição (Y): parede → janela/porta/arco, piso → buraco, rampa → inverter. Sincronizado no multijogador.
+- Construção turbo (segurar o clique) e colapso em cascata de peças sem apoio.
+
+**Movimento**
+- Deslizar (C a correr), escalar bordas (mantle), coyote time e buffer de salto, tirolesa com animação, água/rio.
+
+**Otimização**
+- Grelha espacial na física (colisões/solo/linha de visão só consultam células vizinhas), geometria estática fundida por material, culling de itens distantes, contagem de vivos em cache, minimapa sem redesenho do terreno a cada frame.
+
+**Planadores** (6 novos, com animação própria): Tapete Mágico (ondula), Delta Néon (pulsa), Pipa de Papel (cauda com laços), Mini Dirigível (hélice), Asas de Fénix (batem e largam fogo), Nuvem Fofa.
+
 ## Novidades v15 — Otimização, conteúdo e lobby
 
 **Travadas corrigidas**

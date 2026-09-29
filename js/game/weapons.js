@@ -10,11 +10,24 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Mat } from '../engine/materials.js';
 
+// v16: raridades (multiplicador de dano) — cor = cor da raridade no Fortnite
+export const RARITY = [
+  { id: 'comum', label: 'Comum', css: 'common', color: 0x9ca3af, mult: 1.0 },
+  { id: 'incomum', label: 'Incomum', css: 'uncommon', color: 0x22c55e, mult: 1.06 },
+  { id: 'raro', label: 'Raro', css: 'rare', color: 0x3b82f6, mult: 1.12 },
+  { id: 'epico', label: 'Épico', css: 'epic', color: 0xa855f7, mult: 1.18 },
+  { id: 'lendario', label: 'Lendário', css: 'legendary', color: 0xf59e0b, mult: 1.25 }
+];
+export function rollRarity(bias){ const r = Math.random() + (bias || 0); return r > 0.97 ? 4 : r > 0.88 ? 3 : r > 0.7 ? 2 : r > 0.42 ? 1 : 0; }
+export const GUNS = ['rifle', 'shotgun', 'sniper', 'smg', 'pistol'];
 export const WEAPON_STATS = {
   pickaxe: { name: 'Picareta', icon: '⛏️', dmg: 35, cd: 0.5, range: 7 },
   rifle:   { name: 'Fuzil de Assalto', short: 'AR', icon: '🔫', dmg: 32, head: 2, cd: 0.11, mag: 30, reserve: 180, spread: 0.012, auto: true, reloadClip: 'reloadRifle', reloadTime: 1.7, range: 400 },
   shotgun: { name: 'Escopeta Pump', short: 'ESC', icon: '💥', dmg: 11, pellets: 9, head: 1.8, cd: 0.85, mag: 5, reserve: 30, spread: 0.07, pump: true, reloadClip: 'reloadShotgun', reloadTime: 1.5, range: 70 },
-  sniper:  { name: 'Rifle de Precisão', short: 'SNP', icon: '🎯', dmg: 110, head: 2.5, cd: 1.3, mag: 1, reserve: 16, spread: 0.0, bolt: true, reloadClip: 'boltSniper', reloadTime: 0.85, range: 900, scope: true }
+  sniper:  { name: 'Rifle de Precisão', short: 'SNP', icon: '🎯', dmg: 110, head: 2.5, cd: 1.3, mag: 1, reserve: 16, spread: 0.0, bolt: true, reloadClip: 'boltSniper', reloadTime: 0.85, range: 900, scope: true },
+  // v16
+  smg:     { name: 'Submetralhadora', short: 'SMG', icon: '🔫', dmg: 17, head: 1.75, cd: 0.075, mag: 30, reserve: 210, spread: 0.028, auto: true, reloadClip: 'reloadRifle', reloadTime: 1.7, range: 160, drop: 70 },
+  pistol:  { name: 'Pistola', short: 'PST', icon: '🔫', dmg: 25, head: 2, cd: 0.17, mag: 16, reserve: 96, spread: 0.016, reloadClip: 'reloadRifle', reloadTime: 1.7, range: 260, drop: 120 }
 };
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -40,7 +53,7 @@ const RX = [Math.PI / 2, 0, 0];
 
 function marker(g, name, p){ const o = new THREE.Object3D(); o.name = name; o.position.copy(p); g.add(o); return o; }
 
-const WEAPON_SCALE = { rifle: 1.35, shotgun: 1.3, sniper: 1.25 };
+const WEAPON_SCALE = { rifle: 1.35, shotgun: 1.3, sniper: 1.25, smg: 1.35, pistol: 1.45 };
 export function createWeapon(type){
   const gunMetal = Mat.metal(0x2d323c, 0.38), steel = Mat.metal(0x16181d, 0.3), bright = Mat.metal(0xa8b0ba, 0.22);
   const poly = Mat.polymer(0x1d1f26), poly2 = Mat.polymer(0x3a3f2e), rubber = Mat.polymer(0x0c0c0c);
@@ -133,6 +146,46 @@ export function createWeapon(type){
     markers.muzzle = marker(root, 'muzzle', V(0, 0.22, 2.36));
     markers.sight = marker(root, 'sight', V(0, 0.46, -0.3));
     markers.eject = marker(root, 'eject', V(-0.12, 0.25, 0.2));
+  }
+  else if(type === 'smg'){
+    // corpo compacto com carregador reto, supressor curto e coronha dobrável
+    b.add(gunMetal, box(0.19, 0.22, 0.72, 0.035), V(0, 0.19, 0.26))
+     .add(poly, box(0.17, 0.12, 0.5, 0.03), V(0, 0.04, 0.3))
+     .add(steel, box(0.06, 0.035, 0.55), V(0, 0.32, 0.25))
+     .add(steel, cyl(0.075, 0.075, 0.42, 16), V(0, 0.2, 0.83), RX)
+     .add(accent, cyl(0.08, 0.08, 0.05, 16), V(0, 0.2, 0.66), RX)
+     .add(steel, cyl(0.03, 0.03, 0.05, 10), V(0, 0.2, 1.05), RX)
+     .add(poly, box(0.13, 0.3, 0.15, 0.04), V(0, -0.1, -0.02), [-0.25, 0, 0])
+     .add(steel, box(0.03, 0.09, 0.13), V(0, 0.0, 0.16))
+     .add(poly, box(0.12, 0.2, 0.12, 0.03), V(0, -0.04, 0.58), [0.2, 0, 0])      // punho frontal
+     .add(steel, box(0.04, 0.04, 0.42), V(0.06, 0.16, -0.3)).add(steel, box(0.04, 0.04, 0.42), V(-0.06, 0.16, -0.3))
+     .add(rubber, box(0.16, 0.2, 0.05, 0.02), V(0, 0.14, -0.52))
+     .add(gunMetal, box(0.13, 0.12, 0.16, 0.03), V(0, 0.4, 0.2)).add(glass, box(0.09, 0.08, 0.02), V(0, 0.41, 0.29))
+     .add(glow, box(0.012, 0.03, 0.3), V(0.1, 0.22, 0.3));
+    b.build(root);
+    const mag = new THREE.Group(); mag.position.set(0, -0.02, 0.36);
+    const mb = new WB(); mb.add(poly, box(0.1, 0.42, 0.14, 0.02), V(0, -0.2, 0)).add(steel, box(0.11, 0.04, 0.15), V(0, -0.41, 0));
+    mb.build(mag); root.add(mag); parts.mag = mag;
+    markers.fore = marker(root, 'fore', V(0, -0.1, 0.6));
+    markers.muzzle = marker(root, 'muzzle', V(0, 0.2, 1.1));
+    markers.sight = marker(root, 'sight', V(0, 0.42, 0.1));
+    markers.eject = marker(root, 'eject', V(-0.1, 0.22, 0.3));
+  } else if(type === 'pistol'){
+    b.add(gunMetal, box(0.13, 0.13, 0.62, 0.03), V(0, 0.2, 0.2))          // corrediça
+     .add(poly, box(0.12, 0.09, 0.52, 0.025), V(0, 0.09, 0.18))
+     .add(steel, cyl(0.03, 0.03, 0.08, 10), V(0, 0.2, 0.53), RX)
+     .add(poly, box(0.12, 0.34, 0.17, 0.035), V(0, -0.1, -0.03), [-0.22, 0, 0])
+     .add(steel, box(0.03, 0.08, 0.12), V(0, 0.02, 0.1))
+     .add(steel, box(0.03, 0.05, 0.04), V(0, 0.29, 0.44)).add(steel, box(0.08, 0.05, 0.04), V(0, 0.29, -0.06))
+     .add(accent, box(0.132, 0.02, 0.3), V(0, 0.15, 0.25));
+    for(let i = 0; i < 5; i++) b.add(steel, box(0.135, 0.1, 0.012), V(0, 0.22, -0.04 + i * 0.03));
+    b.build(root);
+    const mag = new THREE.Group(); mag.position.set(0, -0.28, -0.08);
+    const mb = new WB(); mb.add(steel, box(0.1, 0.06, 0.14, 0.01), V(0, 0, 0)); mb.build(mag); root.add(mag); parts.mag = mag;
+    markers.fore = marker(root, 'fore', V(0, -0.14, 0.02));
+    markers.muzzle = marker(root, 'muzzle', V(0, 0.2, 0.58));
+    markers.sight = marker(root, 'sight', V(0, 0.3, -0.1));
+    markers.eject = marker(root, 'eject', V(-0.07, 0.23, 0.15));
   }
   markers.grip = marker(root, 'grip', V(0, -0.04, -0.02));
   root.traverse(o => { if(o.isMesh) o.castShadow = true; });
@@ -369,6 +422,63 @@ export function createGlider(color, style){
     b.add(glow, cyl(0.9, 1.3, 0.12, 24), V(0, 2.28, 0));
     b.add(frame, cyl(0.03, 0.03, 2.3, 8), V(0.7, 1.15, 0), [0, 0, 0.5]).add(frame, cyl(0.03, 0.03, 2.3, 8), V(-0.7, 1.15, 0), [0, 0, -0.5]);
     g.userData.pulse = glow;
+  } else if(style === 'tapete'){
+    // v16: tapete mágico — tecido ondulante com franjas e padrão (faixas por vértice)
+    const pg = new THREE.PlaneGeometry(5.4, 3.4, 30, 12); pg.rotateX(-Math.PI / 2);
+    const cols = new Float32Array(pg.attributes.position.count * 3), cA = new THREE.Color(0x7c2d12), cB = new THREE.Color(0xf59e0b), cC = new THREE.Color(0x1e3a8a);
+    for(let i = 0; i < pg.attributes.position.count; i++){ const x = pg.attributes.position.getX(i), z = pg.attributes.position.getZ(i); const e = Math.max(Math.abs(x) / 2.7, Math.abs(z) / 1.7); const c = e > 0.86 ? cB : (Math.floor((Math.abs(x) + Math.abs(z)) * 1.6) % 2 ? cA : cC); cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b; }
+    pg.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    const cm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
+    const carpet = new THREE.Mesh(pg, cm); carpet.position.set(0, 2.6, -0.3); carpet.castShadow = true; g.add(carpet);
+    carpet.userData.base = pg.attributes.position.array.slice(); g.userData.carpet = carpet;
+    for(let i = 0; i < 14; i++) b.add(Mat.paint(0xfbbf24), cyl(0.03, 0.01, 0.5, 4), V(-2.6 + i * 0.4, 2.35, 1.4));
+    b.add(Mat.cloth(0xfbbf24, 'fabric'), cyl(0.025, 0.025, 2.7, 6), V(1.4, 1.3, 0), [0, 0, 0.6]).add(Mat.cloth(0xfbbf24, 'fabric'), cyl(0.025, 0.025, 2.7, 6), V(-1.4, 1.3, 0), [0, 0, -0.6]);
+  } else if(style === 'neon'){
+    // v16: asa delta de néon (arestas emissivas pulsantes)
+    const shp = new THREE.Shape(); shp.moveTo(0, 2.2); shp.lineTo(3.4, -1.2); shp.lineTo(0, -0.5); shp.lineTo(-3.4, -1.2); shp.closePath();
+    const wg = new THREE.ShapeGeometry(shp); wg.rotateX(-Math.PI / 2 + 0.18);
+    const w = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.25, side: THREE.DoubleSide })); w.position.y = 2.2; w.castShadow = true; g.add(w); g.userData.wing = w;
+    const glow = Mat.emissive(0xf0abfc, 3).clone();
+    const edges = [[V(0, 0, -2.2), V(3.4, 0, 1.2)], [V(0, 0, -2.2), V(-3.4, 0, 1.2)], [V(3.4, 0, 1.2), V(0, 0, 0.5)], [V(-3.4, 0, 1.2), V(0, 0, 0.5)]];
+    for(const [a0, b0] of edges){ const d = b0.clone().sub(a0), L = d.length(); const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d.clone().normalize()); const e = new THREE.Euler().setFromQuaternion(q); b.add(glow, cyl(0.07, 0.07, L, 6), a0.clone().add(b0).multiplyScalar(0.5).add(V(0, 2.25, 0)), [e.x, e.y, e.z]); }
+    b.add(frame, cyl(0.03, 0.03, 2.2, 8), V(0.5, 1.1, 0), [0, 0, 0.45]).add(frame, cyl(0.03, 0.03, 2.2, 8), V(-0.5, 1.1, 0), [0, 0, -0.45]);
+    g.userData.pulse = glow;
+  } else if(style === 'pipa'){
+    // v16: pipa (papagaio de papel) com cauda de laços que ondula
+    const kg = new THREE.BufferGeometry(); kg.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, -2.6, 2, 0, 0, 0, 0, 1.6, 0, 0, -2.6, 0, 0, 1.6, -2, 0, 0], 3)); kg.computeVertexNormals();
+    const k1 = new THREE.Mesh(kg, cloth(color || 0x22c55e)); k1.position.y = 2.6; k1.rotation.x = 0.25; k1.castShadow = true; g.add(k1); g.userData.wing = k1;
+    b.add(Mat.wood(0x92400e), cyl(0.03, 0.03, 4.2, 5), V(0, 2.6, -0.5), RX).add(Mat.wood(0x92400e), cyl(0.03, 0.03, 4, 5), V(0, 2.6, 0), [0, 0, Math.PI / 2]);
+    b.add(frame, cyl(0.02, 0.02, 2.6, 5), V(0.5, 1.3, 0), [0, 0, 0.4]).add(frame, cyl(0.02, 0.02, 2.6, 5), V(-0.5, 1.3, 0), [0, 0, -0.4]);
+    const tail = []; const bowC = [0xef4444, 0xfbbf24, 0x3b82f6, 0xa855f7, 0xef4444];
+    let parent = g; for(let i = 0; i < 5; i++){ const seg = new THREE.Group(); seg.position.set(0, i === 0 ? 2.6 : 0, i === 0 ? 1.8 : 0.75); parent.add(seg); const bow = new THREE.Mesh(new THREE.OctahedronGeometry(0.22), Mat.paint(bowC[i])); bow.scale.set(1.6, 0.4, 0.8); seg.add(bow); tail.push(seg); parent = seg; }
+    g.userData.tail = tail;
+  } else if(style === 'dirigivel'){
+    // v16: mini dirigível com hélice e barquinha
+    const env = new THREE.Mesh(new THREE.SphereGeometry(1.5, 24, 14), Mat.paint(0xe11d48)); env.scale.set(1, 1, 2.2); env.position.y = 3.6; env.castShadow = true; g.add(env);
+    for(let i = 0; i < 3; i++){ const r = new THREE.Mesh(new THREE.TorusGeometry(1.52, 0.05, 6, 32), Mat.paint(0xf8fafc)); r.position.set(0, 3.6, -1.6 + i * 1.6); r.scale.set(1, 1, 1); r.rotation.set(0, 0, 0); const k = Math.sqrt(1 - Math.pow((-1.6 + i * 1.6) / 3.3, 2)); r.scale.set(k, k, 1); g.add(r); }
+    for(const [x, y, rz] of [[0, 1, 0], [1, 0, Math.PI / 2], [-1, 0, -Math.PI / 2]]) b.add(Mat.paint(0xf8fafc), box(0.08, 1.1, 0.9), V(x * 0.9, 3.6 + y * 0.9, -3.0), [0, 0, rz]);
+    b.add(Mat.wood(0x78350f), box(1.0, 0.4, 1.4, 0.1), V(0, 2.0, 0)).add(frame, cyl(0.02, 0.02, 1.8, 4), V(0.4, 2.8, 0), [0, 0, 0.2]).add(frame, cyl(0.02, 0.02, 1.8, 4), V(-0.4, 2.8, 0), [0, 0, -0.2]);
+    b.add(frame, cyl(0.03, 0.03, 2.0, 6), V(0.45, 1.0, 0), [0, 0, 0.45]).add(frame, cyl(0.03, 0.03, 2.0, 6), V(-0.45, 1.0, 0), [0, 0, -0.45]);
+    const prop = new THREE.Group(); prop.position.set(0, 3.6, -3.4); g.add(prop);
+    for(let i = 0; i < 3; i++){ const bl = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 0.04), Mat.metal(0x374151, 0.3)); bl.position.y = 0.5; const pv = new THREE.Group(); pv.rotation.z = i / 3 * Math.PI * 2; pv.add(bl); prop.add(pv); }
+    g.userData.spin = prop;
+  } else if(style === 'fenix'){
+    // v16: asas de fénix em chamas (batem e largam fogo)
+    const wings = [], fire = Mat.emissive(0xff6a00, 2.4), fire2 = Mat.emissive(0xfbbf24, 2.8);
+    for(const sd of [1, -1]){
+      const wj = new THREE.Group(); wj.position.set(sd * 0.3, 1.9, -0.2); g.add(wj);
+      for(let f = 0; f < 6; f++){ const fe = new THREE.Mesh(new THREE.ConeGeometry(0.28, 2.2 - f * 0.18, 5), f % 2 ? fire2 : fire); fe.rotation.z = sd * (Math.PI / 2 + 0.1 + f * 0.12); fe.rotation.x = -0.25; fe.position.set(sd * (0.6 + f * 0.48), 0.1 - f * 0.08, 0.2 + f * 0.04); wj.add(fe); }
+      wings.push(wj);
+    }
+    b.add(frame, cyl(0.03, 0.03, 2.0, 8), V(0.4, 0.95, -0.1), [0, 0, 0.3]).add(frame, cyl(0.03, 0.03, 2.0, 8), V(-0.4, 0.95, -0.1), [0, 0, -0.3]);
+    g.userData.flap = wings; g.userData.fire = [V(-2.4, 1.8, 0), V(2.4, 1.8, 0), V(0, 1.9, -0.6)];
+  } else if(style === 'nuvem'){
+    // v16: nuvem fofa (esferas) que se deforma suavemente
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0xdbeafe, emissiveIntensity: 0.25 });
+    const puffs = [];
+    for(let i = 0; i < 9; i++){ const a = i / 9 * Math.PI * 2, r = i === 0 ? 0 : 1.6; const s = new THREE.Mesh(new THREE.IcosahedronGeometry(1.0 + (i % 3) * 0.25, 2), m); s.position.set(Math.cos(a) * r, 3.1 + (i % 2) * 0.35, Math.sin(a) * r * 0.8); s.castShadow = true; g.add(s); puffs.push(s); }
+    b.add(frame, cyl(0.03, 0.03, 2.6, 8), V(0.5, 1.3, 0), [0, 0, 0.4]).add(frame, cyl(0.03, 0.03, 2.6, 8), V(-0.5, 1.3, 0), [0, 0, -0.4]);
+    g.userData.balloons = puffs;
   }
   b.build(g);
   return g;

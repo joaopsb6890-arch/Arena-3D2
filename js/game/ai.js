@@ -52,7 +52,7 @@ export class BotBrain {
       loot: 0, investigate: this.heard ? 0.45 : 0, wander: 0.2
     };
     if(!a.slots[1] || a.reserve[a.slots[1]] < 5){
-      const ch = W.chests.filter(c => !c.opened).sort((x, y) => x.pos.distanceTo(a.root.position) - y.pos.distanceTo(a.root.position))[0];
+      const ch = W.chests.filter(c => !c.opened && !c.elev).sort((x, y) => x.pos.distanceTo(a.root.position) - y.pos.distanceTo(a.root.position))[0];
       if(ch && ch.pos.distanceTo(a.root.position) < 260){ U.loot = 0.6; this._lootTarget = ch; }
     }
     const hasGun = a.slots.some((t, i) => i > 0 && t);
@@ -88,12 +88,15 @@ export class BotBrain {
         const t = this.target; if(!t || !t.alive){ this.state = 'wander'; break; }
         const d = t.root.position.distanceTo(pos);
         // arma adequada à distância
-        const want = d < 22 && a.slots.includes('shotgun') ? 'shotgun' : d > 120 && a.slots.includes('sniper') ? 'sniper' : a.slots.includes('rifle') ? 'rifle' : a.slots.find((s, i) => i > 0 && s) || 'pickaxe';
+        const has = (w) => a.slots.includes(w);
+        const want = d < 22 && has('shotgun') ? 'shotgun' : d < 40 && has('smg') ? 'smg' : d > 120 && has('sniper') ? 'sniper' : has('rifle') ? 'rifle' : has('smg') ? 'smg' : has('pistol') ? 'pistol' : a.slots.find((s, i) => i > 0 && s) || 'pickaxe';
+        // v16: granada ocasional
+        if(a.grenades > 0 && d > 18 && d < 60 && Math.random() < 0.004 + this.skill * 0.004 && g.fs){ const dir = _v2.subVectors(t.root.position, pos); dir.y = d * 0.12; g.fs.throwGrenade(a, dir.normalize(), Math.min(1, d / 60) * 0.75 + 0.25); }
         const idx = a.slots.indexOf(want); if(idx >= 0 && idx !== a.slot && a.cooldown <= 0) a.equip(idx);
         faceDir = _v2.subVectors(t.root.position, pos);
         // strafe
         this.strafeT -= dt; if(this.strafeT <= 0){ this.strafeT = 0.6 + Math.random() * 1.2; this.strafeDir *= -1; }
-        const ideal = a.weaponType === 'shotgun' ? 10 : a.weaponType === 'pickaxe' ? 4 : 45;
+        const ideal = a.weaponType === 'shotgun' ? 10 : a.weaponType === 'smg' ? 18 : a.weaponType === 'pickaxe' ? 4 : 45;
         a.moveInput.set(this.strafeDir * 0.8, d > ideal * 1.4 ? 1 : d < ideal * 0.6 ? -0.6 : 0);
         this.reaction -= dt;
         // rajadas: alterna janelas de tiro/pausa (bots não são aimbots)
@@ -101,7 +104,7 @@ export class BotBrain {
         if(this.burstT <= 0){ this.burstOn = !this.burstOn; this.burstT = this.burstOn ? 0.5 + Math.random() * 0.8 : 0.5 + Math.random() * (1.4 - this.skill); }
         if(this.reaction <= 0 && this.burstOn) wantFire = true;
         // cobertura: parede quando levou dano recentemente
-        if(a.lastHitBy && this.buildCd <= 0 && a.mats.wood >= 10 && a.hp + a.shield < 80 && Math.random() < 0.02 + this.skill * 0.03){
+        if(a.lastHitBy && this.buildCd <= 0 && (a.mats.wood >= 10 || a.mats.stone >= 10 || a.mats.metal >= 10) && a.hp + a.shield < 80 && Math.random() < 0.02 + this.skill * 0.03){
           this.buildCd = 4; g.botBuildWall(a, t);
         }
         this.jumpT -= dt; if(this.jumpT <= 0 && a.body.grounded && d < 60){ this.jumpT = 1.5 + Math.random() * 3; a.body.vel.y = 26; }

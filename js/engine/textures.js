@@ -167,6 +167,40 @@ const GEN = {
     }
     return { h, strength: 3.6, rough: [0.7, 0.98] };
   },
+  // v16: tijolo (fiadas desencontradas + argamassa funda)
+  brick(W, H, n){
+    const h = new Float32Array(W * H), rows = 8, cols = 4;
+    for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
+      const rv = y / H * rows, ri = Math.floor(rv), rf = rv - ri;
+      const cv = x / W * cols + (ri % 2) * 0.5, cf = cv - Math.floor(cv);
+      const mort = Math.min(1, Math.min(rf, 1 - rf) * 22, Math.min(cf, 1 - cf) * 44);
+      const face = 0.75 + fbm(n, x / 10, y / 10, 4, W / 10) * 0.25 + n(Math.floor(cv) * 13.1, ri * 7.7, 256) * 0.1;
+      h[y * W + x] = mort < 1 ? mort * 0.5 : face;
+    }
+    return { h, strength: 3.2, rough: [0.7, 0.95], detail: [0.72, 1.0] };
+  },
+  // v16: chapa metálica ondulada (contentores, armazéns, construção em metal)
+  sheet(W, H, n){
+    const h = new Float32Array(W * H);
+    for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
+      const wave = Math.sin(x / W * Math.PI * 2 * 12) * 0.5 + 0.5;
+      const rust = fbm(n, x / 20, y / 20, 4, W / 20);
+      const seam = Math.min(1, Math.abs((y / H * 2) % 1 - 0.5) * 60);
+      h[y * W + x] = (wave * 0.8 + rust * 0.2) * (0.6 + seam * 0.4);
+    }
+    return { h, strength: 2.2, rough: [0.35, 0.75], detail: [0.8, 1.0] };
+  },
+  // v16: betão (poros + juntas de cofragem)
+  concrete(W, H, n){
+    const h = new Float32Array(W * H);
+    for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
+      const base = fbm(n, x / 6, y / 6, 5, W / 6);
+      const pore = n(x / 1.5, y / 1.5, W / 1.5) > 0.93 ? -0.35 : 0;
+      const joint = Math.min(1, Math.min(x % (W / 2), W / 2 - x % (W / 2)) * 0.8);
+      h[y * W + x] = (base * 0.6 + 0.4 + pore) * (0.7 + joint * 0.3);
+    }
+    return { h, strength: 1.8, rough: [0.8, 0.98], detail: [0.84, 1.0] };
+  },
   // reboco / parede
   plaster(W, H, n){
     const h = new Float32Array(W * H);

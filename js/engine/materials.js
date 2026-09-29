@@ -163,6 +163,19 @@ export const Mat = {
       return new THREE.MeshStandardMaterial({ color, map: s.map, normalMap: s.normalMap, roughnessMap: s.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(1.4, 1.4) });
     });
   },
+  // v16: novos materiais de mundo (cidade, fábrica, construções)
+  brick(color, rep){
+    return M('brick_' + color + '_' + (rep || 2), () => { const s = surf('brick', rep || 2); return new THREE.MeshStandardMaterial({ color, map: s.map, normalMap: s.normalMap, roughnessMap: s.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(1.3, 1.3) }); });
+  },
+  sheet(color, rep){
+    return M('sheet_' + color + '_' + (rep || 1), () => { const s = surf('sheet', rep || 1); const m = new THREE.MeshStandardMaterial({ color, map: s.map, normalMap: s.normalMap, roughnessMap: s.roughnessMap, metalness: 0.55, roughness: 0.8, normalScale: new THREE.Vector2(1.1, 1.1) }); m.userData.envBoost = 1.5; return m; });
+  },
+  concrete(color, rep){
+    return M('concrete_' + color + '_' + (rep || 2), () => { const s = surf('concrete', rep || 2); return new THREE.MeshStandardMaterial({ color, map: s.map, normalMap: s.normalMap, roughnessMap: s.roughnessMap, roughness: 1 }); });
+  },
+  vcolor(key, opts){  // material de cores por vértice (props instanciados de várias cores → 1 draw call)
+    return M('vcol_' + key, () => new THREE.MeshStandardMaterial(Object.assign({ vertexColors: true, roughness: 0.7, metalness: 0.1 }, opts || {})));
+  },
   plaster(color){
     return M('plaster_' + color, () => {
       const s = surf('plaster', 2);

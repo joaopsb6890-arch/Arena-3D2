@@ -173,7 +173,7 @@ body[data-screen=match] #stats{left:auto;right:10px;bottom:auto;top:250px}
 .bar.sh{height:14px}
 .bar b{position:absolute;right:8px;top:50%;transform:translateY(-50%) skewX(12deg);font:400 16px var(--disp);text-shadow:0 1px 2px #000}
 .bar.sh b{font-size:12px}
-#mats{position:absolute;right:18px;bottom:128px;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+#mats{position:absolute;right:18px;bottom:156px;display:flex;flex-direction:row;flex-wrap:wrap-reverse;justify-content:flex-end;gap:4px;max-width:250px}
 .m{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:4px;background:rgba(0,0,0,.45);font:400 16px var(--disp)}
 .m i{width:16px;height:16px;border-radius:3px}
 .m.wood i{background:#b07b47}.m.stone i{background:#9ca3af}.m.pot i{background:#3b82f6;border-radius:50%}.m.med i{background:#fff;box-shadow:inset 0 0 0 5px #fff,inset 0 0 0 8px #ef4444}
@@ -413,3 +413,14 @@ button.big{width:100%;height:54px;border:none;border-radius:8px;font:400 24px va
 #game-chat.typing input{display:block}#game-chat.typing .log p.old{opacity:1}
 .nametag.human span{color:#fde047}.nametag.human.ally span{color:#93c5fd}
 @media (max-width:860px){.mp-grid{grid-template-columns:1fr}#panel-multi .mp-wrap{inset:10px}#mr-players{grid-template-columns:1fr}}
+/* ===== v16 ===== */
+.m.metal i{background:linear-gradient(135deg,#cbd5e1,#64748b)}
+.m.gren i{background:#4d7c0f;border-radius:50%;box-shadow:inset 0 -3px 0 #365314}
+.m.rift i{background:radial-gradient(circle,#3b0764 30%,#c084fc 60%,transparent 70%);border-radius:50%}
+.m.sel{outline:2px solid #60a5fa;outline-offset:2px;border-radius:6px}
+#build-bar .bp-mat{background:rgba(15,23,42,.6);font-weight:700}
+#build-bar .bp-mat em{font-style:normal;color:#93c5fd}
+.slot.rar-uncommon{background:linear-gradient(180deg,rgba(34,197,94,.5),rgba(0,0,0,.5))}
+#loc-banner{position:absolute;top:62%;left:50%;transform:translate(-50%,10px);font:400 38px var(--disp);letter-spacing:.06em;color:#fff;text-shadow:0 3px 0 rgba(0,0,0,.45),0 0 24px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .45s,transform .45s;text-transform:uppercase;white-space:nowrap}
+#loc-banner.show{opacity:1;transform:translate(-50%,0)}
+.ping-label{position:absolute;left:0;top:0;padding:2px 8px;border-radius:10px;background:rgba(250,204,21,.92);color:#111827;font:800 12px system-ui,sans-serif;pointer-events:none;white-space:nowrap}

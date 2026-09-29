@@ -73,7 +73,7 @@ export class Studio {
   _applyWeapon(){
     const a = this.anim, w = this.state.weapon;
     a.setWeapon(null); a.setPickaxe(null); a.setProp(null);
-    if(['rifle', 'shotgun', 'sniper'].includes(w)) a.setWeapon(createWeapon(w));
+    if(['rifle', 'shotgun', 'sniper', 'smg', 'pistol'].includes(w)) a.setWeapon(createWeapon(w));
     if(w === 'pickaxe') a.setPickaxe(createPickaxe(this.state.pickaxe || 'padrao'));
     if(this.glider){ this.glider.parent && this.glider.parent.remove(this.glider); this.glider = null; }
   }

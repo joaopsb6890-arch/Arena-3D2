@@ -370,8 +370,16 @@ export class Animator {
       if(this.fidgetT <= 0){ this.fidgetT = 7 + Math.random() * 9; this.play(Math.random() < 0.6 ? 'lookAround' : 'shoulderRoll'); }
     }
 
+    // v16: deslize (perna da frente esticada, de trás dobrada, tronco para trás)
+    p.slide = damp(p.slide || 0, st.slide && grounded ? 1 : 0, 14, dt);
+    if(p.slide > 0.01){
+      const w = p.slide, L = (jn, x, y, z) => { if(!off[jn]) return; off[jn][0] = lerp(off[jn][0], x, w); off[jn][1] = lerp(off[jn][1], y, w); off[jn][2] = lerp(off[jn][2], z, w); };
+      L('hips', -0.42, 0.5, 0); L('spine', 0.1, -0.2, 0); L('chest', 0.12, -0.18, 0); L('thighL', -1.35, 0, 0.05); L('shinL', 0.25, 0, 0); L('thighR', -0.45, 0, -0.1); L('shinR', 1.9, 0, 0); L('footL', 0.4, 0, 0); L('footR', -0.3, 0, 0);
+      clipLegFK = Math.max(clipLegFK, w);
+    }
     // ---- aplica FK ----
     J.hips.position.set(hipX + this.rootOff[0], P.hipH + 0.06 + hipY * (1 - clipLegFK) + this.rootOff[1], hipZ);
+    if(p.slide > 0.01) J.hips.position.y = lerp(J.hips.position.y, P.hipH * 0.5, p.slide);
     if(p.freefall > 0.01){ J.hips.position.y = lerp(J.hips.position.y, P.hipH * 0.7, p.freefall); }
     for(const jn of JOINTS){
       const o = off[jn];

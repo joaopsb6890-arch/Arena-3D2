@@ -35,7 +35,14 @@ export const GLIDERS = {
   balao:    { name: 'Balões de Festa',    rarity: 'raro' },
   paraquedas: { name: 'Paraquedas Tático', rarity: 'comum' },
   borboleta:{ name: 'Asas de Borboleta',  rarity: 'epico' },
-  disco:    { name: 'Disco Voador',       rarity: 'lendario' }
+  disco:    { name: 'Disco Voador',       rarity: 'lendario' },
+  // v16
+  tapete:   { name: 'Tapete Mágico',      rarity: 'epico' },
+  neon:     { name: 'Delta Néon',         rarity: 'raro' },
+  pipa:     { name: 'Pipa de Papel',      rarity: 'incomum' },
+  dirigivel:{ name: 'Mini Dirigível',     rarity: 'lendario' },
+  fenix:    { name: 'Asas de Fénix',      rarity: 'lendario' },
+  nuvem:    { name: 'Nuvem Fofa',         rarity: 'raro' }
 };
 export const CONTRAILS = {
   nenhum:  { name: 'Sem rastro', rarity: 'comum', color: null },

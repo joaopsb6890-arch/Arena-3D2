@@ -150,6 +150,7 @@ export class NetSync {
         m.particles.emit('build', S.mesh.position); m.audio.play('build', S.mesh.position, { vol: 0.5 });
         break;
       }
+      case 'edit': { const S = this.structs.get(d.n); if(S && S.alive && S.edit !== d.e) m.editStructure(S, true, d.e); break; }
       case 'sdmg': { const S = this.structs.get(d.n); if(S && S.alive) m.damageStructure(S, d.d, new THREE.Vector3(d.x, d.y, d.z), true); break; }
       case 'chest': { const c = m.world.chests[d.i]; if(c && !c.opened){ m.world.openChest(c); m.audio.play('chest', c.pos, { vol: 0.7 }); } break; }
       case 'emote': { const a = A(d.id); if(a && a.remote && a.alive) a.anim.play(d.n); break; }
@@ -184,6 +185,7 @@ export class NetSync {
     S.nid = this.me.slice(0, 6) + ':' + (++this.sid); this.structs.set(S.nid, S);
     const p = S.mesh.position; this.s.ev({ k: 'build', n: S.nid, id: actor.netId, p: S.piece, x: r2(p.x), y: r2(p.y), z: r2(p.z), q: r2(S.q), m: S.matKind || 'wood' });
   }
+  sendEdit(S){ if(S.nid) this.s.ev({ k: 'edit', n: S.nid, e: S.edit }); }
   sendStructDamage(S, dmg, point){ if(S.nid) this.s.ev({ k: 'sdmg', n: S.nid, d: Math.round(dmg), x: r1(point.x), y: r1(point.y), z: r1(point.z) }); }
   sendChest(c){ const i = this.m.world.chests.indexOf(c); if(i >= 0) this.s.ev({ k: 'chest', i }); }
   sendEmote(a, n){ if(a.local) this.s.ev({ k: 'emote', id: a.netId, n }); }

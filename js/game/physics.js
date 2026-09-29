@@ -13,6 +13,10 @@ import * as THREE from 'three';
 export const GRAVITY = 80;
 const STEP = 1.4;
 
+// v16: grelha espacial (hash 2D) para caixas e círculos — antes cada personagem testava TODAS as caixas
+// do mapa em cada sub-passo (O(atores × caixas)); agora só as das células vizinhas.
+const CELL = 24, _ck = (i, j) => (i + 512) * 4096 + (j + 512);
+const _box3 = new THREE.Box3(), _hitV = new THREE.Vector3(), _rayT = new THREE.Ray();
 export class PhysicsWorld {
   constructor(heightFn){
     this.heightAt = heightFn || (() => 0);
@@ -20,11 +24,29 @@ export class PhysicsWorld {
     this.boxes = [];     // {min:Vector3,max:Vector3, obj?, ramp?:{axis:'x'|'z',dir:±1}}
     this.bodies = [];
     this.debrisCap = 160;
+    this.gB = new Map(); this.gC = new Map(); this._stamp = 1; this._qb = []; this._qc = [];
   }
-  addCircle(x, z, r, top){ const c = { x, z, r, top: top ?? 1e9 }; this.circles.push(c); return c; }
-  addBox(min, max, extra){ const b = Object.assign({ min: min.clone(), max: max.clone() }, extra || {}); this.boxes.push(b); return b; }
-  removeCircle(c){ const i = this.circles.indexOf(c); if(i >= 0) this.circles.splice(i, 1); }
-  removeBox(b){ const i = this.boxes.indexOf(b); if(i >= 0) this.boxes.splice(i, 1); }
+  _cells(minx, minz, maxx, maxz, fn){
+    const i0 = Math.floor(minx / CELL), i1 = Math.floor(maxx / CELL), j0 = Math.floor(minz / CELL), j1 = Math.floor(maxz / CELL);
+    for(let i = i0; i <= i1; i++) for(let j = j0; j <= j1; j++) fn(_ck(i, j));
+  }
+  _ins(grid, o, minx, minz, maxx, maxz){ o._cells = []; this._cells(minx, minz, maxx, maxz, (k) => { let a = grid.get(k); if(!a){ a = []; grid.set(k, a); } a.push(o); o._cells.push(k); }); }
+  _del(grid, o){ if(!o._cells) return; for(const k of o._cells){ const a = grid.get(k); if(a){ const i = a.indexOf(o); if(i >= 0){ a[i] = a[a.length - 1]; a.pop(); } } } o._cells = null; }
+  /** caixas perto do retângulo (sem duplicados) — devolve um array reutilizado */
+  nearBoxes(minx, minz, maxx, maxz){
+    const out = this._qb; out.length = 0; const st = ++this._stamp;
+    this._cells(minx, minz, maxx, maxz, (k) => { const a = this.gB.get(k); if(a) for(const b of a) if(b._st !== st){ b._st = st; out.push(b); } });
+    return out;
+  }
+  nearCircles(minx, minz, maxx, maxz){
+    const out = this._qc; out.length = 0; const st = ++this._stamp;
+    this._cells(minx, minz, maxx, maxz, (k) => { const a = this.gC.get(k); if(a) for(const c of a) if(c._st !== st){ c._st = st; out.push(c); } });
+    return out;
+  }
+  addCircle(x, z, r, top){ const c = { x, z, r, top: top ?? 1e9 }; this.circles.push(c); this._ins(this.gC, c, x - r, z - r, x + r, z + r); return c; }
+  addBox(min, max, extra){ const b = Object.assign({ min: min.clone(), max: max.clone() }, extra || {}); this.boxes.push(b); this._ins(this.gB, b, b.min.x, b.min.z, b.max.x, b.max.z); return b; }
+  removeCircle(c){ const i = this.circles.indexOf(c); if(i >= 0) this.circles.splice(i, 1); this._del(this.gC, c); }
+  removeBox(b){ const i = this.boxes.indexOf(b); if(i >= 0) this.boxes.splice(i, 1); this._del(this.gB, b); }
 
   /** altura da superfície de uma rampa em (x,z) */
   rampHeight(b, x, z){
@@ -37,7 +59,8 @@ export class PhysicsWorld {
   groundAt(x, z, feetY, radius){
     let g = this.heightAt(x, z);
     const rr = radius || 0;
-    for(const b of this.boxes){
+    const near = this.nearBoxes(x - rr, z - rr, x + rr, z + rr);
+    for(let i = 0; i < near.length; i++){ const b = near[i];
       if(x < b.min.x - rr * 0.3 || x > b.max.x + rr * 0.3 || z < b.min.z - rr * 0.3 || z > b.max.z + rr * 0.3) continue;
       const top = b.ramp ? this.rampHeight(b, x, z) : b.max.y;
       if(top <= feetY + STEP && top > g) g = top;
@@ -57,7 +80,8 @@ export class PhysicsWorld {
     }
     p.y += v.y * dt;
     // teto
-    for(const b of this.boxes){
+    const nb = this.nearBoxes(p.x - 2, p.z - 2, p.x + 2, p.z + 2);
+    for(let i = 0; i < nb.length; i++){ const b = nb[i];
       if(b.ramp) continue;
       if(p.x > b.min.x && p.x < b.max.x && p.z > b.min.z && p.z < b.max.z){
         const head = p.y + body.height;
@@ -78,12 +102,14 @@ export class PhysicsWorld {
   }
   _resolveHorizontal(body){
     const p = body.pos, r = body.radius;
-    for(const c of this.circles){
+    const nc = this.nearCircles(p.x - r - 1, p.z - r - 1, p.x + r + 1, p.z + r + 1);
+    for(let i = 0; i < nc.length; i++){ const c = nc[i];
       if(p.y > c.top) continue;
       const dx = p.x - c.x, dz = p.z - c.z, d2 = dx * dx + dz * dz, rr = r + c.r;
       if(d2 < rr * rr && d2 > 1e-6){ const d = Math.sqrt(d2), k = (rr - d) / d; p.x += dx * k; p.z += dz * k; }
     }
-    for(const b of this.boxes){
+    const nb = this.nearBoxes(p.x - r - 1, p.z - r - 1, p.x + r + 1, p.z + r + 1);
+    for(let i = 0; i < nb.length; i++){ const b = nb[i];
       if(b.ramp) continue;
       if(p.y + body.height <= b.min.y || p.y >= b.max.y - STEP) continue; // acima/abaixo ou degrau
       const cx = THREE.MathUtils.clamp(p.x, b.min.x, b.max.x), cz = THREE.MathUtils.clamp(p.z, b.min.z, b.max.z);
@@ -100,14 +126,20 @@ export class PhysicsWorld {
   }
   /** linha de visão livre (para IA) */
   lineClear(a, b){
-    const dir = new THREE.Vector3().subVectors(b, a); const len = dir.length(); dir.divideScalar(len);
-    const ray = new THREE.Ray(a, dir), hit = new THREE.Vector3();
-    for(const bx of this.boxes){
-      const box = new THREE.Box3(bx.min, bx.max);
-      if(ray.intersectBox(box, hit) && hit.distanceTo(a) < len) return false;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, len = Math.hypot(dx, dy, dz); if(len < 1e-4) return true;
+    _rayT.origin.copy(a); _rayT.direction.set(dx / len, dy / len, dz / len);
+    // percorre a linha em troços do tamanho de uma célula (só testa caixas por onde a linha passa)
+    const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / CELL));
+    for(let s = 0; s < n; s++){
+      const x0 = a.x + dx * s / n, z0 = a.z + dz * s / n, x1 = a.x + dx * (s + 1) / n, z1 = a.z + dz * (s + 1) / n;
+      const near = this.nearBoxes(Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1));
+      for(let i = 0; i < near.length; i++){ const bx = near[i]; _box3.min.copy(bx.min); _box3.max.copy(bx.max);
+        if(_rayT.intersectBox(_box3, _hitV) && _hitV.distanceTo(a) < len) return false; }
     }
     return true;
   }
+  /** v16: move uma caixa (estruturas animadas, portas) mantendo a grelha coerente */
+  updateBox(b){ this._del(this.gB, b); this._ins(this.gB, b, b.min.x, b.min.z, b.max.x, b.max.z); }
 
   // ---------- corpos rígidos (destroços / cápsulas / carregadores) ----------
   addBody(mesh, vel, angVel, opts){
