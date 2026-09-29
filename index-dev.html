@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Arena 3D — Battle Royale</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 4h20l-4 7h-9l-1 4h8l-3 6h-6l-2 7H3z' fill='%23fbbf24'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:ital,wght@0,500;0,600;0,700;0,800;1,800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/","trystero/nostr":"https://esm.sh/trystero@0.25.4/nostr"}}</script>
+</head>
+<body data-screen="loading">
+<div id="stage"></div>
+<div id="letterbox"><i></i><i></i></div>
+<div id="stats" class="hide"></div>
+
+<!-- ============ CARREGAMENTO ============ -->
+<div id="loading">
+  <svg class="logo-big" viewBox="0 0 120 120" aria-label="Arena 3D"><path d="M22 14h78l-14 26H54l-4 14h30l-12 24H44l-8 28H10z" fill="currentColor"/></svg>
+  <h1>ARENA <em>3D</em></h1>
+  <div class="load-bar"><i id="load-fill"></i></div>
+  <p id="load-txt">Iniciando motor…</p>
+</div>
+
+<!-- ============ LOBBY / MENUS ============ -->
+<header id="topnav">
+  <div class="brand"><svg viewBox="0 0 120 120" aria-label="Arena 3D"><path d="M22 14h78l-14 26H54l-4 14h30l-12 24H44l-8 28H10z" fill="currentColor"/></svg></div>
+  <nav>
+    <button class="nav-tab active" data-go="lobby">LOBBY</button>
+    <button class="nav-tab nav-multi" data-go="multi">MULTIJOGADOR</button>
+    <button class="nav-tab" data-go="locker">ARMÁRIO</button>
+    <button class="nav-tab" data-go="shop">LOJA</button>
+    <button class="nav-tab" data-go="challenges">DESAFIOS</button>
+    <button class="nav-tab" data-go="studio">ESTÚDIO</button>
+    <button class="nav-tab" data-go="career">CARREIRA</button>
+    <button class="nav-tab" data-go="settings">CONFIG</button>
+  </nav>
+  <div class="profile">
+    <div class="lvl"><span id="lvl-num">1</span><div class="xp"><i id="xp-fill"></i></div></div>
+    <div class="vbucks"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#38bdf8"/><path d="M5 5h3l2 6 2-6h3l-4 10H9z" fill="#fff"/></svg><span id="vb-num">0</span></div>
+    <div class="pname" id="player-name">Jogador</div>
+  </div>
+</header>
+<div id="lobby-tags"></div>
+<div id="ui-toast"></div>
+
+<section class="panel show" id="panel-lobby">
+  <div class="lobby-left">
+    <div class="season"><b>CAPÍTULO 5</b><span>TEMPORADA 3 · Estúdio de animação</span></div>
+  </div>
+  <div class="lobby-right">
+    <button id="cine-btn" class="ghost-btn">Câmera cinematográfica</button>
+    <div class="mode-card" role="button" tabindex="0" title="Trocar modo de jogo">
+      <div class="mode-img"></div>
+      <div class="mode-txt"><b>BATTLE ROYALE</b><span>Solo · 12 jogadores · 10 abates para vencer</span></div><em class="mode-change">TROCAR</em>
+    </div>
+    <button id="play-btn">JOGAR</button>
+    <p class="hint">Arraste o personagem para girar</p>
+  </div>
+</section>
+
+<section class="panel" id="panel-locker">
+  <div class="locker">
+    <h2>ARMÁRIO</h2>
+    <div class="tabs" id="locker-tabs">
+      <button data-cat="skin" class="sel">Trajes</button><button data-cat="pickaxe">Picaretas</button><button data-cat="glider">Planadores</button><button data-cat="contrail">Rastros</button><button data-cat="emote">Emotes</button>
+    </div>
+    <div id="locker-grid" class="item-grid"></div>
+    <div id="locker-extra">
+      <h5>Tipo de corpo <small>(retargeting do mesmo esqueleto)</small></h5><div id="body-grid" class="chips"></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="panel-shop">
+  <div class="shop">
+    <div class="shop-head"><h2>LOJA DE ITENS</h2><span id="shop-reset">Nova loja em 00:00:00</span></div>
+    <h5>Destaques</h5><div id="shop-featured" class="shop-row big"></div>
+    <h5>Diário</h5><div id="shop-daily" class="shop-row"></div>
+    <p class="shop-note">Ganhe V-Bucks jogando: +50 por partida, +25 por abate, +250 pela vitória.</p>
+  </div>
+  <button id="shop-back" class="yellow">VOLTAR À LOJA</button>
+  <div id="shop-modal" class="hide">
+    <div class="sm-card">
+      <div class="sm-img"><img id="sm-img" alt=""></div>
+      <div class="sm-info"><span id="sm-rar"></span><h3 id="sm-name"></h3><p id="sm-cat"></p>
+        <button id="sm-buy" class="yellow"></button><button id="sm-try">Experimentar</button><button id="sm-close">Fechar</button></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="panel-challenges">
+  <div class="card-panel">
+    <h2>DESAFIOS</h2>
+    <ul class="ch-list">
+      <li><b>Especialista</b><span>Acerte 5 tiros na cabeça com o rifle de precisão</span><i style="--p:20%"></i></li>
+      <li><b>Arquiteto</b><span>Construa 50 paredes em uma partida</span><i style="--p:44%"></i></li>
+      <li><b>Sobrevivente</b><span>Fique entre os 3 últimos</span><i style="--p:0%"></i></li>
+      <li><b>Lenhador</b><span>Colete 500 de madeira</span><i style="--p:71%"></i></li>
+      <li><b>Dançarino</b><span>Use 3 emotes diferentes no lobby</span><i style="--p:66%"></i></li>
+    </ul>
+  </div>
+</section>
+
+<section class="panel" id="panel-studio"><div id="compare-tags"><span>ANTES · v10</span><span class="new">DEPOIS · v11</span></div><aside id="studio-ui" class="studio-ui"></aside></section>
+
+<section class="panel" id="panel-multi">
+  <div class="mp-wrap">
+    <div id="mp-browse" class="mp-grid">
+      <div class="card-panel mp-card-list">
+        <div class="mp-row"><h2>SALAS PÚBLICAS</h2><button id="mp-refresh" class="ghost-btn">Atualizar</button></div>
+        <p id="mp-status" class="mp-status">A ligar ao canal público…</p>
+        <div id="mp-rooms"></div>
+        <div class="mp-join"><input id="mp-code" maxlength="8" placeholder="CÓDIGO DA SALA" autocomplete="off"><button id="mp-join" class="yellow">ENTRAR</button></div>
+        <p class="mp-note">Ligação direta entre navegadores (WebRTC P2P). Sem servidor de jogo: o criador da sala é o anfitrião. Algumas redes (empresa, 4G com CGNAT) podem bloquear P2P.</p>
+      </div>
+      <div class="card-panel mp-card-create">
+        <h2>CRIAR SALA</h2>
+        <label><span>Nome da sala</span><input id="mp-name" maxlength="28" placeholder="Sala dos amigos"></label>
+        <label><span>Modo</span><select id="mp-mode"></select></label>
+        <label><span>Máx. jogadores</span><select id="mp-max"><option>2</option><option>3</option><option>4</option><option>6</option><option selected>8</option></select></label>
+        <label class="chk"><input id="mp-public" type="checkbox" checked><span>Sala pública (aparece na lista)</span></label>
+        <label class="chk"><input id="mp-bots" type="checkbox" checked><span>Completar com bots</span></label>
+        <button id="mp-create" class="yellow big">CRIAR SALA</button>
+      </div>
+    </div>
+    <div id="mp-room" class="mp-grid hide">
+      <div class="card-panel mr-main">
+        <div class="mp-row"><div><small id="mr-state">A LIGAR…</small><h2 id="mr-title">Sala</h2><span id="mr-mode" class="mr-mode"></span></div>
+          <div class="mr-codebox"><small>CÓDIGO</small><b id="mr-code">-----</b><button id="mr-copy" class="ghost-btn">Copiar link</button></div></div>
+        <h3>JOGADORES <span id="mr-count"></span></h3>
+        <ul id="mr-players"></ul>
+        <div id="mr-host" class="mr-host hide">
+          <label><span>Modo</span><select id="mr-set-mode"></select></label>
+          <label><span>Máx.</span><select id="mr-set-max"><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select></label>
+          <label class="chk"><input id="mr-set-bots" type="checkbox"><span>Bots</span></label>
+          <label class="chk"><input id="mr-set-public" type="checkbox"><span>Pública</span></label>
+        </div>
+        <div class="mr-actions"><button id="mr-start" class="yellow big hide">INICIAR PARTIDA</button><p id="mr-wait" class="mr-wait">O anfitrião inicia a partida quando todos estiverem prontos.</p><button id="mr-leave">SAIR DA SALA</button></div>
+      </div>
+      <div class="card-panel mr-chatbox">
+        <h3>CHAT</h3>
+        <div id="mr-chat"></div>
+        <form id="mr-chat-form"><input id="mr-chat-in" maxlength="140" placeholder="Escreva uma mensagem…" autocomplete="off"><button class="yellow">ENVIAR</button></form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="panel-career">
+  <div class="card-panel"><h2>CARREIRA</h2><div id="career-stats" class="career-stats"></div></div>
+</section>
+
+<section class="panel" id="panel-settings">
+  <div class="card-panel settings">
+    <h2>CONFIGURAÇÕES</h2>
+    <label><span>Nome</span><input id="set-name" type="text" maxlength="16"></label>
+    <label><span>Qualidade gráfica</span><select id="set-quality" data-set="quality"></select></label>
+    <label><span>Sensibilidade do mouse</span><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05"></label>
+    <label><span>Volume</span><input id="set-vol" type="range" min="0" max="1" step="0.05"></label>
+    <label><span>Clima da partida</span><select id="set-weather"><option value="limpo">Limpo</option><option value="nublado">Nublado</option><option value="chuva">Chuva</option><option value="tempestade">Tempestade</option><option value="neblina">Neblina</option></select></label>
+    <label><span>Hora do dia</span><input id="set-time" type="range" min="0" max="24" step="0.5"></label>
+    <label class="chk"><input id="set-party" type="checkbox"><span>Mostrar grupo no lobby</span></label>
+    <label class="chk"><input id="set-stats" type="checkbox"><span>Mostrar FPS / estatísticas (F8)</span></label>
+    <div class="keys"><b>Controles</b><span>WASD mover · Shift correr · Espaço pular · C agachar · Mouse mirar/atirar · R recarregar · 1–5 slots · Q construir (Z parede, X piso, C rampa, V telhado) · E interagir · H poção · G kit · B emote · M mapa · Esc pausa</span></div>
+  </div>
+</section>
+
+<!-- ============ HUD DA PARTIDA ============ -->
+<div id="hud" class="hide">
+  <div id="storm-vignette"></div><div id="low-hp"></div><div id="damage-flash"></div>
+  <div id="dmg-dir"><i></i></div>
+  <div id="nametag-layer"></div>
+  <div id="damage-container"></div>
+  <div id="compass"><div id="compass-strip"></div><span id="compass-deg">0°</span></div>
+  <div id="minimap"><canvas id="minimap-canvas" width="220" height="220"></canvas>
+    <div class="mm-info"><span><svg viewBox="0 0 16 16"><circle cx="8" cy="5" r="3" fill="currentColor"/><path d="M2 15c0-4 3-6 6-6s6 2 6 6z" fill="currentColor"/></svg><b id="player-count">12</b></span><span><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg><b id="kill-count">0</b></span><span><svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3v4l3 2" stroke="currentColor" stroke-width="2" fill="none"/></svg><b id="storm-timer">35s</b></span></div>
+  </div>
+  <div id="killfeed"></div>
+  <div id="storm-warning">A TEMPESTADE ESTÁ SE FECHANDO</div>
+  <div id="toast"></div>
+  <div id="interact-hint"></div>
+  <div id="altimeter" class="hide"><b id="alt-num">0 m</b><span>ALTITUDE</span><small id="alt-hint"></small></div>
+  <div id="speed-lines"></div>
+  <div id="vendor-tag" style="display:none"><div class="bubble"></div><div class="vn">MERCADOR</div><div class="offers"><kbd>E</kbd> Poção de escudo · 100 ouro<br><kbd>T</kbd> Fuzil + munição · 300 ouro</div></div>
+  <div id="deploy-overlay" class="hide"><b>ÔNIBUS DE BATALHA</b><span>Clique ou aperte <kbd>ESPAÇO</kbd> para saltar</span></div>
+  <div id="reload-bar"><span id="reload-label">RECARREGANDO</span><i><b id="reload-fill"></b></i></div>
+  <div id="vitals">
+    <div class="bar sh"><i id="sh-fill"></i><b id="sh-num">0</b></div>
+    <div class="bar hp"><i id="hp-fill"></i><b id="hp-num">100</b></div>
+  </div>
+  <div id="mats"><span class="m wood"><i></i><b id="wood-count">0</b></span><span class="m stone"><i></i><b id="stone-count">0</b></span><span class="m pot"><i></i><b id="potion-count">0</b></span><span class="m med"><i></i><b id="medkit-count">0</b></span><span class="m gold"><i></i><b id="gold-count">0</b></span></div>
+  <div id="slots">
+    <div class="slot" id="slot-1"><em>1</em><div class="slot-ico"></div><span class="slot-name"></span></div>
+    <div class="slot" id="slot-2"><em>2</em><div class="slot-ico"></div><span class="slot-name"></span></div>
+    <div class="slot" id="slot-3"><em>3</em><div class="slot-ico"></div><span class="slot-name"></span></div>
+    <div class="slot" id="slot-4"><em>4</em><div class="slot-ico"></div><span class="slot-name"></span></div>
+    <div class="slot" id="slot-5"><em>5</em><div class="slot-ico"></div><span class="slot-name"></span></div>
+    <div id="ammo">∞</div>
+  </div>
+  <div id="mode-score"></div>
+  <div id="game-chat"><div class="log"></div><input id="game-chat-in" maxlength="140" placeholder="Enter para enviar · Esc cancela"></div>
+  <div id="creative-bar"><div class="cr-slots"></div><div class="cr-info"><span class="cr-mat"></span><span id="cr-count"></span></div></div>
+  <div id="build-bar"><span id="bp-wall"><kbd>Z</kbd>Parede</span><span id="bp-floor"><kbd>X</kbd>Piso</span><span id="bp-ramp"><kbd>C</kbd>Rampa</span><span id="bp-cone"><kbd>V</kbd>Telhado</span></div>
+</div>
+<div id="crosshair" class="hide"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="d"></i></div>
+<div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+<div id="sniper-scope"><div class="lens"></div></div>
+
+<div id="mode-picker" class="overlay hide"><div class="mp-box"><div class="mp-head"><h2>ESCOLHER MODO</h2><button id="mp-close" class="ui-btn">FECHAR</button></div><div id="mp-list"></div></div></div>
+<div id="creative-menu" class="overlay hide"><div class="cr-box">
+  <div class="cr-col"><h3>CATÁLOGO</h3><p class="cr-tip">Clique num objeto para o colocar no espaço selecionado da barra (1-9).</p><div id="cr-catalog"></div></div>
+  <div class="cr-col side"><h3>MAPA</h3>
+    <label>Nome <input id="cr-name" maxlength="32"></label>
+    <div class="cr-btns"><button id="cr-save" class="yellow">SALVAR</button><button id="cr-test" class="yellow">TESTAR MAPA</button></div>
+    <div class="cr-btns"><button id="cr-new-flat">NOVO (PLANO)</button><button id="cr-new-island">NOVO (ILHA)</button></div>
+    <div class="cr-btns"><button id="cr-export">EXPORTAR JSON</button><label class="file-btn">IMPORTAR<input id="cr-import" type="file" accept=".json,application/json"></label></div>
+    <h3>MAPAS SALVOS</h3><div id="cr-maps"></div>
+    <div class="cr-btns"><button id="cr-close">VOLTAR AO MAPA (Tab)</button><button id="cr-exit">SAIR PARA O LOBBY</button></div>
+  </div>
+</div></div>
+<div id="lock-prompt"><b>CLIQUE PARA CONTINUAR</b><span>O navegador precisa de um clique para prender o rato no jogo</span></div>
+<div id="pause-overlay" class="overlay hide"><div class="ov-card"><h2>PAUSADO</h2><button id="btn-resume" class="yellow">CONTINUAR</button><button id="btn-leave">SAIR DA PARTIDA</button><p>O rato fica preso ao jogo quando continuar. Esc volta a soltá-lo.</p></div></div>
+<div id="victory" class="overlay result hide"><div class="ov-card"><h1 class="win">#1 VITÓRIA ROYALE</h1><p class="res-sub">Você foi o melhor da ilha</p><div class="res-stats"></div><button class="yellow btn-again">JOGAR NOVAMENTE</button><button class="btn-lobby">VOLTAR AO LOBBY</button></div></div>
+<div id="defeat" class="overlay result hide"><div class="ov-card"><h1 class="lose">ELIMINADO</h1><p class="res-sub">Mais sorte na próxima</p><div class="res-stats"></div><button class="yellow btn-again">JOGAR NOVAMENTE</button><button class="btn-lobby">VOLTAR AO LOBBY</button></div></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
