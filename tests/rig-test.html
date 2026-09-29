@@ -1,0 +1,52 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#c{position:fixed;inset:0}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script></head>
+<body><div id="c"></div><script type="module">
+import * as THREE from 'three';
+import { Renderer } from '../js/engine/renderer.js';
+import { Environment } from '../js/engine/weather.js';
+import { ParticleSystem } from '../js/engine/particles.js';
+import { Mat } from '../js/engine/materials.js';
+import { createCharacter } from '../js/anim/rig.js';
+import { Animator } from '../js/anim/animator.js';
+import { createWeapon, createPickaxe } from '../js/game/weapons.js';
+const q = new URLSearchParams(location.search);
+const R = new Renderer(document.getElementById('c'));
+R.setQuality(q.get('q') || 'media');
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 5000);
+R.setScene(scene, cam);
+const P = new ParticleSystem(scene);
+const env = new Environment(scene, R, P, null, { time: 15 });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400,400), Mat.ground(0x6a8f4a)); ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+const skins = (q.get('skins')||'default,purple,shadow').split(',');
+const chars = skins.map((s,i)=>{ const ch=createCharacter(s); ch.root.position.x=(i-(skins.length-1)/2)*5; scene.add(ch.root); const a=new Animator(ch); return {ch,a}; });
+const mode = q.get('mode')||'idle';
+const wpn = q.get('wpn')||'none';
+chars.forEach(({ch,a})=>{ if(['rifle','shotgun','sniper'].includes(wpn)) a.setWeapon(createWeapon(wpn)); if(wpn==='pickaxe') a.setPickaxe(createPickaxe()); if(q.get('clip')) a.play(q.get('clip')); });
+const view = q.get('view')||'front';
+const speed = parseFloat(q.get('speed')||'0');
+const yaw = parseFloat(q.get('yaw')||'0');
+chars.forEach(({ch})=>ch.root.rotation.y=yaw);
+let last=performance.now(), T=0;
+window.__errors=[];
+function frame(){
+  const now=performance.now(); let dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(window.__fixedDt) dt=window.__fixedDt;
+  T+=dt;
+  chars.forEach(({ch,a})=>{
+    a.update(dt,{ vel:new THREE.Vector3(Math.sin(yaw)*speed,0,Math.cos(yaw)*speed), grounded: mode!=='air', mode: mode==='freefall'?'freefall':mode==='glide'?'glide':'ground', crouch: mode==='crouch', weapon: wpn, aimPitch: parseFloat(q.get('pitch')||'0'), aiming: q.get('ads')==='1', vy: 5 });
+  });
+  const d = parseFloat(q.get('d')||'22'), h=parseFloat(q.get('h')||'4.2');
+  const ang = view==='side'? Math.PI/2 : view==='back'? Math.PI : view==='q'? 0.7 : 0;
+  cam.position.set(Math.sin(ang)*d, h, Math.cos(ang)*d); cam.lookAt(0, parseFloat(q.get('ly')||'3.8'), 0);
+  env.update(dt, cam); P.update(dt);
+  if(!window.__sim) R.render(dt);
+  if(!window.__stopped) requestAnimationFrame(frame);
+}
+window.__simulate=(n,dt)=>{ window.__stopped=true; window.__sim=true; window.__fixedDt=dt; for(let i=0;i<n;i++) frame(); window.__sim=false; frame(); return 'ok'; };
+window.__step=(n,dt)=>{ window.__fixedDt=dt; };
+window.__stopped = q.get('manual')==='1';
+frame();
+Object.assign(window,{env,R,scene,cam,chars,THREE});
+window.__ready=true;
+</script></body></html>
