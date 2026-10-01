@@ -34,7 +34,7 @@ export class Actor {
     this.mag = {}; this.reserve = { rifle: 60, shotgun: 10, sniper: 6, smg: 60, pistol: 32 };
     this.mats = { wood: 60, stone: 30, metal: 0 }; this.potions = 1; this.medkits = 0;
     this.rar = {}; this.tac = { granada: 0, impulso: 0, escudo: 0, fumo: 0, arbusto: 0 }; this.tacSel = 'granada'; this.bush = null; this.rifts = 0;      // v16: raridade por arma, granadas, fendas
-    this.slideT = 0; this.mantleT = 0; this.coyote = 0; this.jumpBuf = 0; this.inWater = false;
+    this.slideT = 0; this.mantleT = 0; this.climbing = false; this.stamina = 4; this.staminaMax = 4; this.jumpHeld = false; this.coyote = 0; this.jumpBuf = 0; this.inWater = false;
     this.cooldown = 0; this.reloading = 0; this.using = 0; this.useKind = null;
     this.models = {};
     // cosméticos (loadout)
@@ -195,7 +195,7 @@ export class Actor {
     return amount;
   }
   die(killer){
-    this.alive = false;
+    this.alive = false; this.climbing = false;
     if(this.local && this.game.net) this.game.net.sendDeath(this, killer);
     this.anim.stopEmotes(); this.anim.setWeapon(null); this.anim.play('death');
     this.game.onActorDeath(this, killer);
@@ -211,7 +211,7 @@ export class Actor {
     if(this.remote){ if(g.net) g.net.step(this, dt); }
     else if(this.alive){
       // v17: jogador mais rápido (andar 17→20, correr 23→28, agachado 8→10)
-      const speedBase = this.crouch ? 10 : this.sprint ? 28 : 20;
+      const speedBase = (this.crouch ? 10 : this.sprint ? 28 : 20) * (this.boostT > 0 ? 1.55 : 1);   // v20: placas de velocidade
       // v16: água (lago/rio) abranda e salpica
       const wy = g.world && g.world.waterAt ? g.world.waterAt(b.pos.x, b.pos.z) : null;
       this.inWater = wy !== null && b.pos.y < wy + 0.4 && this.mode === 'ground';
@@ -222,7 +222,11 @@ export class Actor {
       const fx = sy, fz = cy, rx = -cy, rz = sy;
       let wx = fx * mi.y + rx * mi.x, wz = fz * mi.y + rz * mi.x;
       const l = Math.hypot(wx, wz); if(l > 1){ wx /= l; wz /= l; }
-      if(this.mode === 'zip'){
+      if(this.kart && g.v20){
+        g.v20.kartStep(this, dt, mi);   // v20: quadriciclo (a física normal trata da gravidade e colisões)
+      } else if(this.rail && g.v19){
+        g.v19.railStep(this, dt);   // v19: carril de deslize
+      } else if(this.mode === 'zip'){
         if(g.fs) g.fs.zipStep(this, dt);
       } else if(this.mantleT > 0){
         // v16: escalar beirais — puxa o corpo para cima e para a frente numa curva curta
@@ -254,7 +258,11 @@ export class Actor {
         if(this.jumpBuf > 0 && this.coyote > 0 && !this.flying && b.vel.y <= 1){ this.jumpBuf = 0; this.coyote = 0; this._doJump(); }
         // escalar: no ar, a empurrar para a frente contra um beiral baixo
         if(!b.grounded && !this.flying && mi.y > 0.5 && b.vel.y < 12 && this.airTime > 0.08) this._tryMantle();
-        b.gravityScale = this.flying ? 0 : 1; b.maxFall = 0;
+        // v19: ESCALADA — segurar ESPAÇO + frente contra parede/rocha/árvore/falésia; gasta resistência
+        if(this.climbing) this._climbStep(dt, mi);
+        else if(this.jumpHeld && mi.y > 0.5 && !this.flying && this.slideT <= 0 && this.stamina > 0.4 && !(this.mantleT > 0) && (this.airTime > 0.12 || b.grounded) && this._climbTimer <= 0) this._tryClimb();
+        if(!this.climbing){ this._climbTimer = Math.max(0, (this._climbTimer || 0) - dt); if(b.grounded) this.stamina = Math.min(this.staminaMax, this.stamina + dt * 1.1); }
+        b.gravityScale = this.flying || this.climbing ? 0 : 1; b.maxFall = 0;
         if(this.flying) b.vel.y += ((this.flyUp || 0) * 28 - b.vel.y) * Math.min(1, 8 * dt);   // voo do Modo Criativo
       } else if(this.mode === 'freefall'){
         // mergulho (frente) acelera a queda, trás "trava" (planar de barriga); A/D inclina e curva
@@ -277,13 +285,13 @@ export class Actor {
         this.height = b.pos.y - g.physics.groundAt(b.pos.x, b.pos.z, b.pos.y, 0);
       }
       const wasMode = this.mode, prevVy = b.vel.y;
-      if(this.mode !== 'zip' && !(this.mantleT > 0)) g.physics.moveCharacter(b, dt);
+      if(this.mode !== 'zip' && !(this.mantleT > 0) && !this.rail) g.physics.moveCharacter(b, dt);
       if(!b.grounded) this.airTime += dt; 
       if(b.landVy < -30 && this.mode === 'ground') this.anim.landImpact(b.landVy);
       if(b.grounded && this.mode !== 'ground'){ this.setMode('ground'); if(wasMode === 'glide'){ this.anim.play('landGlide'); g.particles.emit('dust', b.pos, { n: 16, power: 1.8 }); this._landFx(); } }
       if(b.grounded && this.airTime > 0){
         // queda alta (após salto de plataforma/construção): aterrissagem pesada com poeira em anel
-        if(b.landVy < -38 && wasMode === 'ground'){ this.anim.play('landHeavy'); g.particles.emit('dust', b.pos, { n: 22, power: 2.4 }); if(this.isPlayer && g.tps) g.tps.addTrauma(0.35); }
+        if(b.landVy < -38 && wasMode === 'ground'){ this.anim.play(Math.hypot(b.vel.x, b.vel.z) > 12 && !this.climbing ? 'rolar' : 'landHeavy'); g.particles.emit('dust', b.pos, { n: 22, power: 2.4 }); if(this.isPlayer && g.tps) g.tps.addTrauma(0.35); }
         this.airTime = 0; this.launched = false;
       }
       if(b.landVy < -20){ g.particles.emit('dust', b.pos, { n: 10, power: 1.4 }); g.audio.play('land', b.pos, { vol: 0.6 }); }
@@ -301,9 +309,9 @@ export class Actor {
     // estado da animação
     const st = {
       vel: b.vel, grounded: b.grounded, crouch: this.crouch, vy: b.vel.y, mode: this.mode,
-      weapon: this.using > 0 ? 'none' : (this.weaponType === 'none' ? 'none' : this.weaponType),
+      weapon: this.using > 0 || this.climbing ? 'none' : (this.weaponType === 'none' ? 'none' : this.weaponType),
       aimPitch: this.pitch, aiming: this.aiming, aimPoint: this.aimPoint || null, lookTarget: this.lookTarget || null,
-      dive: this.fallInput.dive, bank: this.fallInput.bank, slide: this.slideT > 0
+      dive: this.fallInput.dive, bank: this.fallInput.bank, slide: this.slideT > 0 || !!this.rail || !!this.remoteRail || !!this.kart || !!this.remoteKart, climb: this.climbing, climbRate: this.climbing ? Math.max(0, b.vel.y) : 0
     };
     if(this.mode === 'zip'){ st.mode = 'glide'; st.dive = 0; st.bank = 0; }
     // LOD por distância
@@ -376,6 +384,7 @@ export class Actor {
   requestJump(){ this.jumpBuf = 0.16; if(this.slideT > 0){ this.slideT = 0; } }
   _doJump(){
     const b = this.body; b.vel.y = this.inWater ? 22 : 27; b.grounded = false;
+    if(this.anim && !this.anim.isPlaying('jumpUp')) this.anim.play('jumpUp');
     // salto a partir do deslize conserva velocidade horizontal (slide-jump)
     this.game.audio.play('jump', this.root.position, { vol: this.isPlayer ? 0.4 : 0.3 }); this.anim.stopEmotes();
     if(this.inWater) this.game.particles.emit('splash', b.pos, { n: 10 });
@@ -390,21 +399,53 @@ export class Actor {
     if(this.isPlayer && this.game.quest) this.game.quest('slide');
     return true;
   }
-  _tryMantle(){
+  _tryClimb(){
+    const b = this.body, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 0.9, b.height);
+    if(top === null || top < b.pos.y + 2.2) return false;
+    this.climbing = true; this.climbTop = top; this.climbT = 0; this.crouch = false;
+    this.anim.stopEmotes();
+    if(this.isPlayer && this.game.quest) this.game.quest('climb');
+    return true;
+  }
+  _climbStep(dt, mi){
+    const b = this.body, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 0.9, b.height + 1);
+    this.climbT += dt; this.stamina -= dt;
+    const stop = (jumpOff) => {
+      this.climbing = false; this._climbTimer = 0.35;
+      if(jumpOff){ b.vel.set(-fx * 14, 20, -fz * 14); this.game.audio.play('jump', this.root.position, { vol: 0.35 }); }
+    };
+    if(top === null){ // chegou ao topo: sobe o beiral
+      this.climbing = false; b.vel.set(0, 0, 0);
+      const px = b.pos.x + fx * (b.radius + 1.3), pz = b.pos.z + fz * (b.radius + 1.3);
+      const g = this.game.physics.groundAt(px, pz, b.pos.y + 3.5, 0.4);
+      if(g > b.pos.y - 0.5){ this.mantle = { from: b.pos.clone(), to: new THREE.Vector3(px, g + 0.05, pz) }; this.mantleT = 0.32; this.anim.play('mantle', { speed: 1.2 }); }
+      else b.vel.set(fx * 6, 10, fz * 6);
+      return;
+    }
+    if(top - b.pos.y < 2.6){ stop(false); this._tryMantle(true); return; }
+    if(!this.jumpHeld || mi.y < 0.2 || this.stamina <= 0){ stop(mi.y < -0.3); return; }
+    const sp = 10 + Math.min(1, this.climbT * 4) * 2;       // sobe ~12 u/s
+    b.vel.set(fx * 3 + (mi.x ? -Math.cos(this.yaw) * mi.x * 5 : 0), sp, fz * 3 + (mi.x ? Math.sin(this.yaw) * mi.x * 5 : 0));
+    if(Math.random() < dt * 6) this.game.particles.emit('dust', b.pos.clone().add(new THREE.Vector3(fx, 2.5, fz)), { n: 1, power: 0.5 });
+    this._climbStepAcc = (this._climbStepAcc || 0) + dt; if(this._climbStepAcc > 0.28){ this._climbStepAcc = 0; this.game.onFootstep(this, 6); }
+  }
+  _tryMantle(force){
     const b = this.body, P = this.game.physics, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     const px = b.pos.x + fx * (b.radius + 1.3), pz = b.pos.z + fz * (b.radius + 1.3);
     const top = P.groundAt(px, pz, b.pos.y + 7.2, 0.4);
-    if(top < b.pos.y + 1.8 || top > b.pos.y + 8.4) return;
+    if(top < b.pos.y + (force ? 0.3 : 1.8) || top > b.pos.y + 8.4) return;
     // espaço livre por cima do beiral
     for(const bx of P.nearBoxes(px - 1, pz - 1, px + 1, pz + 1)) if(!bx.ramp && bx.min.y > top + 0.2 && bx.min.y < top + b.height && px > bx.min.x - 1 && px < bx.max.x + 1 && pz > bx.min.z - 1 && pz < bx.max.z + 1) return;
-    this.mantle = { from: b.pos.clone(), to: new THREE.Vector3(px, top + 0.05, pz) }; this.mantleT = 0.32;
-    this.anim.play('launch', { speed: 2 });
+    this.mantle = { from: b.pos.clone(), to: new THREE.Vector3(px, top + 0.05, pz) }; this.mantleT = 0.32; this.climbing = false;
+    this.anim.play('mantle', { speed: 1.25 });
     this.game.audio.play('land', this.root.position, { vol: 0.25, rate: 1.4 });
   }
   setMode(m){
     if(this.mode === m) return;
     const prev = this.mode;
-    this.mode = m; this.wantDeploy = false;
+    this.mode = m; this.wantDeploy = false; this.climbing = false;
     if(m === 'glide'){
       this.deployT = 0; this.anim.play('deployGlider');
       this.game.audio.play('woosh', this.root.position, { vol: 0.7, rate: 0.8 });

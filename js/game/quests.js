@@ -16,7 +16,20 @@ export const QUEST_POOL = [
   { id: 'slide5',  k: 'slide',   n: 5,   xp: 200, t: 'Desliza 5 vezes' },
   { id: 'tac3',    k: 'tac',     n: 3,   xp: 250, t: 'Usa 3 itens táticos' },
   { id: 'llama1',  k: 'llama',   n: 1,   xp: 350, t: 'Abre uma lhama' },
-  { id: 'edit5',   k: 'edit',    n: 5,   xp: 200, t: 'Edita 5 construções' }
+  { id: 'edit5',   k: 'edit',    n: 5,   xp: 200, t: 'Edita 5 construções' },
+  // v19
+  { id: 'climb3',  k: 'climb',   n: 3,   xp: 250, t: 'Escala 3 vezes' },
+  { id: 'rail2',   k: 'rail',    n: 2,   xp: 250, t: 'Desliza em 2 carris' },
+  { id: 'forage5', k: 'forage',  n: 5,   xp: 200, t: 'Come 5 maçãs ou cogumelos' },
+  { id: 'coin5',   k: 'coin',    n: 5,   xp: 300, t: 'Apanha 5 moedas de XP' },
+  { id: 'upg1',    k: 'upgrade', n: 1,   xp: 300, t: 'Melhora uma arma na bancada' },
+  // v20
+  { id: 'drive3',  k: 'drive',   n: 3,   xp: 250, t: 'Conduz um quadriciclo (3 trechos)' },
+  { id: 'cannon2', k: 'cannon',  n: 2,   xp: 250, t: 'Dispara-te de um canhão ou catapulta 2 vezes' },
+  { id: 'portal2', k: 'portal',  n: 2,   xp: 200, t: 'Atravessa 2 portais' },
+  { id: 'gnome1',  k: 'gnome',   n: 1,   xp: 300, t: 'Encontra um gnomo escondido' },
+  { id: 'balloon1',k: 'balloon', n: 1,   xp: 200, t: 'Salta de um balão de ar quente' },
+  { id: 'radar1',  k: 'radar',   n: 1,   xp: 150, t: 'Ativa uma torre de radar' }
 ];
 export const SEASON = [
   { id: 's_kill25',  k: 'kill',    n: 25,   xp: 1500, t: 'Especialista', d: 'Elimina 25 adversários' },
@@ -25,7 +38,9 @@ export const SEASON = [
   { id: 's_harv3k',  k: 'harvest', n: 3000, xp: 1000, t: 'Lenhador',     d: 'Recolhe 3000 materiais' },
   { id: 's_fish15',  k: 'fish',    n: 15,   xp: 1000, t: 'Pescador',     d: 'Pesca 15 peixes' },
   { id: 's_win1',    k: 'win',     n: 1,    xp: 2000, t: 'Vitória Royale', d: 'Ganha uma partida' },
-  { id: 's_loc12',   k: 'loc',     n: 12,   xp: 1200, t: 'Explorador',   d: 'Visita 12 locais com nome' }
+  { id: 's_loc12',   k: 'loc',     n: 12,   xp: 1200, t: 'Explorador',   d: 'Visita 12 locais com nome' },
+  { id: 's_climb30',  k: 'climb',   n: 30,   xp: 1200, t: 'Alpinista',    d: 'Escala 30 vezes' },
+  { id: 's_coin40',   k: 'coin',    n: 40,   xp: 1500, t: 'Colecionador', d: 'Apanha 40 moedas de XP' }
 ];
 function dayKey(){ const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
 function pickDaily(day){ let h = 0; for(const c of day) h = (h * 31 + c.charCodeAt(0)) >>> 0; const ids = QUEST_POOL.map(q => q.id), out = []; while(out.length < 3){ h = (h * 1103515245 + 12345) >>> 0; const id = ids[h % ids.length]; if(!out.includes(id)) out.push(id); } return out; }

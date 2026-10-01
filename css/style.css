@@ -470,3 +470,35 @@ button.big{width:100%;height:54px;border:none;border-radius:8px;font:400 24px va
 .m.gren[data-k=escudo] i{background:#38bdf8}
 .m.gren[data-k=fumo] i{background:#9ca3af;border-radius:4px}
 .m.gren[data-k=arbusto] i{background:#16a34a;border-radius:40%}
+/* v19: resistência (escalada), medalhão, textos flutuantes novos */
+#stamina{position:absolute;left:18px;bottom:82px;width:min(220px,30vw);height:9px;border-radius:3px;background:rgba(0,0,0,.45);overflow:hidden;transform:skewX(-12deg);opacity:0;transition:opacity .25s;pointer-events:none}
+#stamina.on{opacity:1}
+#stamina i{position:absolute;left:0;top:0;bottom:0;width:100%;background:linear-gradient(180deg,#fde68a,#f59e0b);transition:width .08s linear}
+#stamina.low i{background:linear-gradient(180deg,#fca5a5,#ef4444)}
+#stamina span{position:absolute;left:4px;top:-15px;font:700 10px/1 var(--font-ui,inherit);letter-spacing:.12em;color:#fde68a;transform:skewX(12deg);text-shadow:0 1px 2px #000}
+#medal-tag{position:absolute;left:18px;bottom:104px;padding:5px 10px;border-radius:6px;background:linear-gradient(90deg,rgba(245,158,11,.85),rgba(245,158,11,.25));color:#1c1917;font:800 11px/1.2 var(--font-ui,inherit);letter-spacing:.06em;pointer-events:none}
+#medal-tag span{display:block;font-weight:600;font-size:10px;color:#292524}
+.dmg-num.xp{color:#c084fc;font-size:20px}.dmg-num.heal{color:#4ade80;font-size:18px}
+
+/* v20: partida rápida (matchmaking) + lobby público */
+.mp-quick{margin-bottom:16px}
+.mm-tag{font:800 11px Barlow;letter-spacing:.08em;background:#16a34a;color:#fff;padding:3px 7px;border-radius:5px;vertical-align:middle;margin-left:6px}
+.mm-modes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.mm-modes button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;text-align:left;transition:.15s}
+.mm-modes button:hover{border-color:var(--yellow);transform:translateY(-2px)}
+.mm-modes button b{font:400 18px var(--disp)}.mm-modes button small{font-size:11px;opacity:.75;font-weight:700}
+.mm-status{margin-top:12px;padding:12px;border-radius:8px;background:rgba(250,204,21,.12);border:1px solid rgba(250,204,21,.4);display:flex;flex-direction:column;gap:6px}
+.mm-status b{font:400 20px var(--disp);color:var(--yellow)}.mm-status span{font-size:13px;opacity:.85}
+#mm-dots{display:flex;flex-wrap:wrap;gap:4px}#mm-dots i{font-style:normal;font-size:11px;font-weight:800;padding:3px 7px;border-radius:99px;background:rgba(255,255,255,.12)}#mm-dots i.me{background:var(--yellow);color:#111}
+.mm-status .ghost-btn{align-self:flex-start}
+.hub-count{font-size:12px;font-weight:800;color:#86efac}
+.hub-list{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px;max-height:132px;overflow:auto}
+.hub-list li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.06);font-size:13px}
+.hub-list li b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hub-list li small{opacity:.7;font-size:11px}
+.hub-list li button{padding:4px 10px;border-radius:5px;border:none;background:var(--yellow);color:#111;font:400 13px var(--disp);cursor:pointer}
+.hub-list li.empty{opacity:.65;font-style:italic}
+.hub-chat{height:150px;overflow:auto;background:#0b1030;border-radius:8px;padding:8px 10px;font-size:13px;display:flex;flex-direction:column;gap:3px}
+.hub-chat p{margin:0;line-height:1.35}.hub-chat p.me b{color:var(--yellow)}.hub-chat p.sys{opacity:.6;font-style:italic}
+.hub-form{display:flex;gap:6px;margin-top:8px}.hub-form input{flex:1;padding:10px 12px;border-radius:7px;border:1px solid var(--line);background:#0b1030;color:#fff;font:700 14px Barlow}.hub-form button{padding:0 16px;border-radius:7px;border:none;font:400 16px var(--disp);cursor:pointer}
+.invite-pop{position:fixed;right:18px;top:80px;z-index:60;background:rgba(10,14,40,.96);border:2px solid var(--yellow);border-radius:10px;padding:12px 14px;color:#fff;display:flex;flex-direction:column;gap:8px;max-width:280px;font-size:14px}
+.invite-pop div{display:flex;gap:6px}.invite-pop button{padding:6px 12px;border-radius:6px;border:none;font:400 15px var(--disp);cursor:pointer}.invite-pop .ok{background:var(--yellow);color:#111}

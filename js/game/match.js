@@ -14,6 +14,8 @@ import { WEAPON_STATS, createWeapon, createPickaxe, createGlider, createPotion, 
 import { pieceGeometry, buildMaterials, BUILD_MATS, EDITS } from './buildpieces.js';
 import { FortSystems } from './fnsystems.js';
 import { FortExtras, TACTICALS } from './fnextra.js';
+import { FortV19 } from './fnv19.js';
+import { FortV20 } from './fnv20.js';
 import { makeBattleBus } from './bus.js';
 import { PICKAXES, GLIDERS } from './cosmetics.js';
 import { TPSCamera, CinematicDirector } from '../engine/camera.js';
@@ -63,6 +65,8 @@ export class Match {
     this.sys = new MatchSystems(this);
     this.fs = new FortSystems(this);
     this.fx2 = new FortExtras(this);
+    this.v19 = new FortV19(this);
+    this.v20 = new FortV20(this);
     this.rules = new ModeRules(this, this.modeId); this.mode = this.rules.M;
     if(this.layout) this.layoutObjs = buildLayout(this, this.layout, false);
     if(this.mode.creative) this.creative = new CreativeTools(this);
@@ -222,6 +226,8 @@ export class Match {
     if(this.sys) this.sys.dispose();
     if(this.fs) this.fs.dispose();
     if(this.fx2) this.fx2.dispose();
+    if(this.v19) this.v19.dispose();
+    if(this.v20) this.v20.dispose();
     const qt = $('quest-tracker'); if(qt) qt.innerHTML = '';
     if(this.net) this.net.dispose();
     const gc = document.getElementById('game-chat'); if(gc){ gc.classList.remove('on', 'typing'); gc.querySelector('.log').innerHTML = ''; }
@@ -621,6 +627,8 @@ export class Match {
   // ---------------- interação ----------------
   interact(){
     const P = this.player;
+    if(this.v20 && this.v20.interact(P)) return;
+    if(this.v19 && this.v19.interact(P)) return;
     if(this.fx2 && this.fx2.interact(P)) return;
     if(this.fs && this.fs.interact(P)) return;
     if(this.sys && this.sys.interact(P)) return;
@@ -685,12 +693,13 @@ export class Match {
       if(this.busT >= 1.05){ this.scene.remove(this.bus); this.bus = null; }
     }
     // entrada do jogador
-    if(this.paused){ P.moveInput.set(0, 0); P.sprint = false; this.mouse.l = false; }
+    if(this.paused){ P.moveInput.set(0, 0); P.sprint = false; P.jumpHeld = false; this.mouse.l = false; }
     else if(P.alive && !P.onBus){
       const k = this.keys;
       P.moveInput.set((k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0), (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0));
       if(P.moveInput.lengthSq() > 0 && P.anim.clips.some(c => c.def.emote && !c.stopping)) P.anim.stopEmotes();
       P.sprint = !!k.ShiftLeft && P.moveInput.y > 0 && !P.aiming;
+      P.jumpHeld = !!k.Space;
       if(P.sprint) P.crouch = false;
       P.aiming = this.mouse.r && !this.build.on && P.weaponType !== 'pickaxe' && P.mode === 'ground';
       P.yaw = this.tps.yaw; P.pitch = this.tps.pitch;
@@ -720,6 +729,8 @@ export class Match {
     if(this.sys) this.sys.update(dt);
     if(this.fs) this.fs.update(dt);
     if(this.fx2) this.fx2.update(dt);
+    if(this.v19) this.v19.update(dt);
+    if(this.v20) this.v20.update(dt);
     this.rules.update(dt);
     if(this.creative) this.creative.update(dt);
     // mira: ponto sob a mira (raycast do centro da câmera) → o personagem aponta para lá, a mira nunca fica sobre ele
@@ -864,7 +875,7 @@ export class Match {
     const pk = !c && W.pickups.find(p => p.pos.distanceTo(P.root.position) < 5 && !['ammo', 'wood', 'stone', 'metal'].includes(p.type));
     const hint = $('interact-hint');
     const drop = this.sys && this.sys.drops.find(d => d.landed && !d.opened && d.pos.distanceTo(P.root.position) < 6);
-    const fh = !c && !pk && !drop && this.fs ? ((this.fx2 && this.fx2.hint(P)) || this.fs.hint(P)) : null;
+    const fh = !c && !pk && !drop && this.fs ? ((this.v20 && this.v20.hint(P)) || (this.v19 && this.v19.hint(P)) || (this.fx2 && this.fx2.hint(P)) || this.fs.hint(P)) : null;
     hint.classList.toggle('show', !!(c || pk || drop || fh));
     const hh = fh ? fh : drop ? '<kbd>E</kbd> Abrir entrega aérea' : c ? '<kbd>E</kbd> Abrir baú' : pk ? `<kbd>E</kbd> Pegar ${WEAPON_STATS[pk.type] ? `<b style="color:#${RARITY[pk.rar || 0].color.toString(16).padStart(6, '0')}">${WEAPON_STATS[pk.type].name} (${RARITY[pk.rar || 0].label})</b>` : ({ medkit: 'kit médico', grenade: 'granadas', rift: 'Fenda Portátil', impulso: 'Granada de Impulso', escudo: 'Splash de Escudo', fumo: 'Granada de Fumo', arbusto: 'Arbusto' })[pk.type] || 'poção de escudo'}` : null;
     if(hh && hint._h !== hh){ hint._h = hh; hint.innerHTML = hh; }
@@ -897,7 +908,7 @@ export class Match {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(tx(w.storm.cx), tz(w.storm.cz), w.storm.r * scale, 0, Math.PI * 2); ctx.stroke();
     if(w.storm.shrinking || w.storm.timer < 35){ ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(tx(w.storm.tcx), tz(w.storm.tcz), w.storm.target * scale, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     if(this.bus){ ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.moveTo(tx(this.busFrom.x), tz(this.busFrom.z)); ctx.lineTo(tx(this.busTo.x), tz(this.busTo.z)); ctx.stroke(); }
-    if(this.sys) for(const mk of this.sys.minimapMarks().concat(this.fs ? this.fs.minimapMarks(P) : [])){ ctx.fillStyle = mk.c; ctx.beginPath(); if(mk.sq) ctx.rect(tx(mk.x) - mk.s / 2, tz(mk.z) - mk.s / 2, mk.s, mk.s); else ctx.arc(tx(mk.x), tz(mk.z), mk.s / 2 + 0.5, 0, Math.PI * 2); ctx.fill(); if(mk.sq){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); } }
+    if(this.sys) for(const mk of this.sys.minimapMarks().concat(this.fs ? this.fs.minimapMarks(P) : [], this.v19 ? this.v19.minimapMarks(P) : [], this.v20 ? this.v20.minimapMarks(P) : [])){ ctx.fillStyle = mk.c; ctx.beginPath(); if(mk.sq) ctx.rect(tx(mk.x) - mk.s / 2, tz(mk.z) - mk.s / 2, mk.s, mk.s); else ctx.arc(tx(mk.x), tz(mk.z), mk.s / 2 + 0.5, 0, Math.PI * 2); ctx.fill(); if(mk.sq){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); } }
     if(this.mode.teams) for(const b of this.bots) if(b.alive && this.isAlly(P, b)){ ctx.fillStyle = '#60a5fa'; ctx.beginPath(); ctx.arc(tx(b.root.position.x), tz(b.root.position.z), 3.5, 0, Math.PI * 2); ctx.fill(); }
     // jogador
     const px = tx(P.root.position.x), pz = tz(P.root.position.z);

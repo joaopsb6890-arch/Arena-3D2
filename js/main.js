@@ -27,7 +27,7 @@ const store = {
 
 class App {
   constructor(){
-    this.settings = Object.assign({ name: 'Jogador', skin: 'default', body: 'padrao', quality: this._autoQuality(), weather: 'limpo', time: 15, sens: 1, vol: 0.8, party: true, showStats: true, pickaxe: 'padrao', glider: 'classico', contrail: 'nuvem' }, store.get('settings', {}));
+    this.settings = Object.assign({ name: 'Jogador', skin: 'default', body: 'padrao', quality: this._autoQuality(), weather: 'limpo', time: 15, sens: 1, vol: 0.8, party: true, showStats: true, autoQ: true, pickaxe: 'padrao', glider: 'classico', contrail: 'nuvem' }, store.get('settings', {}));
     this.career = Object.assign({ matches: 0, wins: 0, kills: 0, xp: 0, vbucks: 1500 }, store.get('career', {}));
     this.store = store;
     this.quests = new Quests(this);
@@ -215,6 +215,12 @@ class App {
     if(this.screen === 'shop' || this.screen === 'locker') pumpThumbs();
   }
   _stats(s){
+    // v20: qualidade automática — se o FPS ficar baixo ~4 s com a resolução adaptativa já no mínimo, desce um nível
+    if(this.settings.autoQ !== false && this.screen === 'match' && !this.manual){
+      const order = ['baixa', 'media', 'alta', 'ultra'], i = order.indexOf(this.qualityName);
+      this._aqLow = s.fps < 34 && s.minDyn ? (this._aqLow || 0) + 1 : 0;
+      if(this._aqLow >= 8 && i > 0){ this._aqLow = 0; this.setQuality(order[i - 1]); if(this.match && this.match.toast) this.match.toast('Qualidade ajustada para ' + QUALITY[order[i - 1]].label + ' (desempenho)'); }
+    }
     const el = $('stats'); if(!el) return;
     el.classList.toggle('hide', !this.settings.showStats);
     el.innerHTML = `<b class="${s.fps >= 55 ? 'ok' : s.fps >= 40 ? 'mid' : 'bad'}">${s.fps.toFixed(0)} FPS</b><span>${s.ms.toFixed(1)} ms</span><span>${s.calls} draws</span><span>${(s.tris / 1000).toFixed(0)}k tris</span><span>${QUALITY[this.qualityName].label} · ${s.pr.toFixed(2)}x</span>`;
@@ -349,6 +355,7 @@ class App {
     bind('set-weather', 'weather'); bind('set-time', 'time');
     bind('set-party', 'party', (v) => this.lobby.setParty(v && this.screen === 'lobby'));
     bind('set-stats', 'showStats');
+    if($('set-autoq')) bind('set-autoq', 'autoQ');
     // partida
     $('btn-resume').addEventListener('click', () => { if(this.match && this.match.paused) this.match.togglePause(); this.lockPointer(); });
     $('lock-prompt').addEventListener('click', () => this.lockPointer());

@@ -7,6 +7,28 @@ Projeto em Three.js r160 com ES modules.
 - Depois de editar `js/`, é preciso regenerar o `index.html` com `npm i esbuild && node tools/build.mjs`.
 Parâmetros de URL: `?q=baixa|media|alta|ultra` (qualidade) e `?manual=1` (desliga o rAF, para testes automatizados via `window.__simulate(n, dt)`). A tecla F8 mostra FPS, draw calls e triângulos.
 
+## Novidades v20
+
+- Otimização: oclusão ambiente só em Ultra, sombras em frames alternados também em Alta, malhas de colisão escondidas, culling a distância por qualidade, fogueiras sem luzes próprias (uma única luz segue a mais próxima), objetos apanháveis só desenhados ao perto, qualidade automática (desce um nível se o FPS cair abaixo de 34).
+- Mapa maior (raio 920) com mais árvores, rochas e 7 casas novas. 4 POIs novos: Baía dos Piratas (navio com canhões, mastros e tirolesa), Castelo Real (muralhas, torres escaláveis, ponte levadiça, catapulta), Parque Radical (roda gigante, carrossel, montanha-russa) e Aeródromo (pista, hangares, avião, torre de controlo).
+- Sistemas novos: quadriciclos (E para entrar, W/S, A/D, ESPAÇO salta, atropela), canhões e catapulta, balões de ar quente, montanha-russa em circuito, placas de velocidade nas estradas, máquinas de venda, barris de escudo, torres de radar, portais, 12 gnomos escondidos e 6 missões novas.
+- Asas delta refeitas (vela com curvatura, quilha, mastro, trapézio, réguas, cabos e winglets) + 2 planadores novos: Delta Pro e Asa de Falcão.
+- Corpo melhorado: trapézios, peitorais, deltoides, bíceps, antebraços, gémeos, pescoço e cabeça com melhores proporções.
+- Lobby Público: lista de quem está online, chat global e convites diretos para a tua sala; os jogadores da sala aparecem no lobby 3D.
+- Partida Rápida (matchmaking sem bots): filas por modo (Battle Royale, Zero Build, Equipas, Corrida às Armas, Duelo); o jogador mais antigo na fila cria a sala e a partida começa sozinha.
+
+## Novidades v19
+
+- Mapa maior (raio 780) com 5 locais novos: Cidade Fantasma, Pântano Sombrio, Estância Gelada, Ruínas Antigas e Mirante dos Ventos; mais 7 casas no anel exterior, colinas nevadas, pântano e baía no Porto.
+- Escalada: segura ESPAÇO e anda contra uma parede, rocha, coluna ou árvore. Gasta Resistência (barra amarela) e faz mantle no topo; ESPAÇO + trás salta para trás.
+- Animações novas: escalada, mantle, impulso do salto, rolamento em quedas fortes, inclinação nas curvas e emotes Continência, A Minhoca e Marcha.
+- Carris de deslize (6) — salta para cima para deslizar a alta velocidade.
+- Forrageio: maçãs (+5 vida) e cogumelos azuis (+5 escudo); fogueiras curam.
+- Moedas de XP (verdes, roxas e douradas no topo do que se escala).
+- Cogumelos saltitões no Pântano, chuva de meteoros, zona quente, sequências de abates.
+- Quadros de recompensa, Chefe Trovão (Medalhão e Cartão do Cofre), cofre da Base Científica, bancadas de melhoria de armas.
+- Missões novas (escalar, carris, forrageio, moedas, melhorias).
+
 ## Novidades v16 — Mapa, sistemas Fortnite, construção e planadores
 
 **Mapa**

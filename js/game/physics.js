@@ -124,6 +124,28 @@ export class PhysicsWorld {
       }
     }
   }
+  /** v19: obstáculo vertical à frente (para escalar) → topo da parede/rocha/falésia ou null */
+  wallAhead(pos, fx, fz, dist, height){
+    const px = pos.x + fx * dist, pz = pos.z + fz * dist, y = pos.y;
+    let top = null;
+    const nb = this.nearBoxes(px - 0.6, pz - 0.6, px + 0.6, pz + 0.6);
+    for(let i = 0; i < nb.length; i++){ const b = nb[i];
+      if(b.ramp || b.noClimb) continue;
+      if(px < b.min.x - 0.5 || px > b.max.x + 0.5 || pz < b.min.z - 0.5 || pz > b.max.z + 0.5) continue;
+      if(b.max.y <= y + STEP || b.min.y > y + height) continue;
+      if(top === null || b.max.y > top) top = b.max.y;
+    }
+    const nc = this.nearCircles(px - 4, pz - 4, px + 4, pz + 4);
+    for(let i = 0; i < nc.length; i++){ const c = nc[i];
+      if(c.top > 1e8 || c.top <= y + STEP) continue;
+      const d = Math.hypot(px - c.x, pz - c.z); if(d > c.r + 0.5) continue;
+      if(top === null || c.top > top) top = c.top;
+    }
+    // falésias/encostas íngremes do terreno
+    const h = this.heightAt(px, pz);
+    if(h > y + 4 && (top === null || h > top)) top = h;
+    return top;
+  }
   /** linha de visão livre (para IA) */
   lineClear(a, b){
     const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, len = Math.hypot(dx, dy, dz); if(len < 1e-4) return true;

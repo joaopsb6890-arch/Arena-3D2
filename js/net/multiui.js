@@ -6,6 +6,7 @@
 import { PublicLobby, NetSession, genCode, NET_MODES, selfId } from './net.js';
 import { MODES } from '../game/modes.js';
 import { MapStore } from '../game/creative.js';
+import { PublicHub, Matchmaker, MM_MODES } from './matchmaking.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -14,6 +15,7 @@ export class MultiUI {
   constructor(app){
     this.app = app; this.session = null;
     app.publicLobby = new PublicLobby();
+    app.hub = this.hub = new PublicHub(); this.mm = new Matchmaker(app);
     app.MODES = MODES;
     this._build();
     // link direto: ?sala=CODIGO
@@ -37,8 +39,66 @@ export class MultiUI {
     this.app.publicLobby.on(() => this._list());
     this._list();
     this._view();
+    this._buildQuick();
   }
-  onShow(){ this.app.publicLobby.open(); this._list(); this._view(); }
+  // ---------------- v20: partida rápida + lobby público ----------------
+  _buildQuick(){
+    $('mm-modes').innerHTML = Object.entries(MM_MODES).map(([k, M]) => `<button data-mm="${k}"><b>${esc(M.n)}</b><small>${M.min}–${M.max} jogadores · sem bots</small></button>`).join('');
+    $('mm-modes').onclick = (e) => { const b = e.target.closest('[data-mm]'); if(b) this.queue(b.dataset.mm); };
+    $('mm-cancel').onclick = () => { this.mm.leave(); this.hub.setStatus('No lobby'); this._mmView(null); };
+    this.mm.onChange = (info) => this._mmView(info);
+    this.mm.onMatch = (d) => this._mmFound(d);
+    $('hub-form').onsubmit = (e) => { e.preventDefault(); const i = $('hub-in'); this.hub.open(this.profile()); this.hub.say(i.value); i.value = ''; };
+    $('hub-list').onclick = (e) => { const b = e.target.closest('[data-inv]'); if(b && this.session){ this.hub.invite(b.dataset.inv, this.session.code, this.session.settings.mode); b.textContent = 'ENVIADO'; b.disabled = true; } };
+    this.hub.on(() => this._hubView());
+    this.hub.onInvite = (d) => this._invitePop(d);
+    this._hubView();
+  }
+  queue(mode){
+    if(this.session) this.leave();
+    this.hub.open(this.profile()); this.hub.setStatus('Na fila · ' + MM_MODES[mode].n);
+    this.mm.join(mode, this.profile());
+  }
+  _mmView(info){
+    const st = $('mm-status'); if(!st) return;
+    $('mm-modes').classList.toggle('hide', !!info);
+    st.classList.toggle('hide', !info);
+    if(!info) return;
+    $('mm-title').textContent = info.state === 'found' ? 'PARTIDA ENCONTRADA' : 'À PROCURA · ' + info.M.n.toUpperCase();
+    $('mm-sub').textContent = info.state === 'found' ? 'A ligar à sala…' : info.n < info.M.min ? `${info.n}/${info.M.min} jogadores na fila · à espera de mais (${info.waited} s)` : info.secs !== null ? `${info.n} jogadores · começa em ${info.secs} s` : `${info.n} jogadores · a preparar…`;
+    $('mm-dots').innerHTML = info.list.map(p => `<i class="${p.me ? 'me' : ''}">${esc(p.name)}</i>`).join('');
+  }
+  _mmFound(d){
+    this.hub.setStatus('Em partida rápida');
+    if(d.host){
+      const settings = { name: 'Partida rápida', mode: d.mode, public: false, max: Math.max(2, d.expect), bots: false, layout: null, quick: true };
+      this._attach(new NetSession(this.app, { code: d.code, host: true, settings, profile: this.profile() }));
+      this.session._pushChat({ sys: true, text: 'Partida rápida encontrada. A iniciar quando todos entrarem…' });
+      const s = this.session, t0 = Date.now();
+      clearInterval(this._autoT);
+      this._autoT = setInterval(() => { if(this.session !== s){ clearInterval(this._autoT); return; } const n = s.roster.size; if(n >= d.expect || (Date.now() - t0 > 20000 && n >= 2)){ clearInterval(this._autoT); setTimeout(() => { if(this.session === s && !s.inGame) s.start(); }, 1500); } else if(Date.now() - t0 > 45000){ clearInterval(this._autoT); s._pushChat({ sys: true, text: 'Ninguém conseguiu entrar. Volta a procurar.' }); } }, 500);
+    } else {
+      this.join(d.code);
+      if(this.session) this.session._pushChat({ sys: true, text: 'Partida rápida encontrada. O jogo começa sozinho.' });
+    }
+    this._mmView(null);
+  }
+  _hubView(){
+    const L = $('hub-list'); if(!L) return;
+    const list = this.hub.list();
+    $('hub-count').textContent = (list.length + (this.hub.room ? 1 : 0)) + ' online';
+    L.innerHTML = list.length ? list.map(p => `<li><b>${esc(p.name)}</b><small>${esc(p.st)}</small>${this.session ? `<button data-inv="${esc(p.id)}">CONVIDAR</button>` : ''}</li>`).join('') : `<li class="empty">${this.hub.room ? 'Ainda não há mais ninguém online. Partilha o jogo com amigos.' : 'A ligar ao lobby público…'}</li>`;
+    const C = $('hub-chat'); C.innerHTML = this.hub.chat.map(m => `<p class="${m.me ? 'me' : ''}"><b>${esc(m.from)}:</b> ${esc(m.text)}</p>`).join('') || '<p class="sys">Chat global — todos os jogadores online veem as mensagens.</p>'; C.scrollTop = C.scrollHeight;
+  }
+  _invitePop(d){
+    const el = document.createElement('div'); el.className = 'invite-pop';
+    el.innerHTML = `<b>${esc(d.from)} convidou-te</b><span>${esc(MODES[d.mode] ? MODES[d.mode].name : 'Sala')} · ${esc(d.code)}</span><div><button class="ok">ENTRAR</button><button>Ignorar</button></div>`;
+    document.body.appendChild(el);
+    el.querySelector('.ok').onclick = () => { el.remove(); if(this.app.screen !== 'multi') this.app.go('multi'); this.join(d.code); };
+    el.querySelectorAll('button')[1].onclick = () => el.remove();
+    setTimeout(() => el.remove(), 20000);
+  }
+  onShow(){ this.app.publicLobby.open(); this.hub.open(this.profile()); this._list(); this._view(); this._hubView(); }
   _list(){
     const el = $('mp-rooms'); if(!el) return;
     const rooms = this.app.publicLobby.list();
@@ -101,6 +161,8 @@ export class MultiUI {
   _view(){
     const s = this.session;
     $('mp-browse').classList.toggle('hide', !!s); $('mp-room').classList.toggle('hide', !s);
+    if(this.app.lobby && this.app.lobby.setRoster) this.app.lobby.setRoster(s ? s.order.filter(id => id !== selfId).map(id => s.roster.get(id)).filter(Boolean) : null);
+    if(this.hub && this.hub.room) this.hub.setStatus(s ? (s.inGame ? 'Em jogo' : 'Na sala ' + s.code) : (this.mm.room ? this.hub.me.st : 'No lobby'));
     if(!s) return;
     $('mr-code').textContent = s.code;
     $('mr-title').textContent = s.settings.name || 'Sala';

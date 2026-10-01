@@ -377,6 +377,23 @@ export class Animator {
       L('hips', -0.42, 0.5, 0); L('spine', 0.1, -0.2, 0); L('chest', 0.12, -0.18, 0); L('thighL', -1.35, 0, 0.05); L('shinL', 0.25, 0, 0); L('thighR', -0.45, 0, -0.1); L('shinR', 1.9, 0, 0); L('footL', 0.4, 0, 0); L('footR', -0.3, 0, 0);
       clipLegFK = Math.max(clipLegFK, w);
     }
+    // v19: ESCALADA — braços alternam a alcançar por cima, pernas empurram, corpo encostado à parede
+    p.climb = damp(p.climb || 0, st.climb ? 1 : 0, 12, dt);
+    if(p.climb > 0.01){
+      const w = p.climb; this.climbPh = ((this.climbPh || 0) + dt * (0.5 + (st.climbRate || 0) * 0.11)) % 1;
+      const s1 = Math.sin(this.climbPh * TAU), c1 = Math.cos(this.climbPh * TAU);
+      const L = (jn, x, y, z) => { if(!off[jn]) return; off[jn][0] = lerp(off[jn][0], x, w); off[jn][1] = lerp(off[jn][1], y, w); off[jn][2] = lerp(off[jn][2], z, w); };
+      L('hips', 0.18, 0, s1 * 0.07); L('spine', 0.12, s1 * 0.06, 0); L('chest', 0.08, s1 * 0.08, 0); L('neck', -0.25, 0, 0); L('head', -0.45 + c1 * 0.05, -s1 * 0.12, 0);
+      L('uArmL', -2.55 - s1 * 0.45, 0, 0.35); L('uArmR', -2.55 + s1 * 0.45, 0, -0.35);
+      L('fArmL', -0.35 - Math.max(0, s1) * 1.2, 0, 0); L('fArmR', -0.35 - Math.max(0, -s1) * 1.2, 0, 0);
+      L('handL', 0.4, 0, 0); L('handR', 0.4, 0, 0);
+      L('thighL', -0.85 + s1 * 0.55, 0, 0.18); L('shinL', 1.35 - s1 * 0.6, 0, 0); L('footL', 0.2, 0, 0);
+      L('thighR', -0.85 - s1 * 0.55, 0, -0.18); L('shinR', 1.35 + s1 * 0.6, 0, 0); L('footR', 0.2, 0, 0);
+      clipLegFK = Math.max(clipLegFK, w);
+    }
+    // v19: inclinação lateral ao correr de lado + leve atraso da cabeça (estabilização)
+    if(grounded && p.moveW > 0.05){ off.spine[2] += -mdx * 0.07 * p.moveW * (1 + p.runF); off.head[2] += mdx * 0.05 * p.moveW; }
+    off.head[1] += THREE.MathUtils.clamp(-this.yawRate * 0.02, -0.18, 0.18);
     // ---- aplica FK ----
     J.hips.position.set(hipX + this.rootOff[0], P.hipH + 0.06 + hipY * (1 - clipLegFK) + this.rootOff[1], hipZ);
     if(p.slide > 0.01) J.hips.position.y = lerp(J.hips.position.y, P.hipH * 0.5, p.slide);

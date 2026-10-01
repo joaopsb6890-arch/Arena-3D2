@@ -195,7 +195,8 @@ export function createCharacter(skinKey, opts){
   const P = {
     thigh: 1.72 * BT.leg * H, shin: 1.62 * BT.leg * H, ankle: 0.16 * H,
     hipW: 0.40 * BT.hip, spine: 0.95 * H, chestH: 1.0 * H, neck: 0.34 * H,
-    headR: 0.56 * BT.head, shoulderW: 0.80 * BT.shoulder, clavX: 0.18,
+    headR: 0.6 * BT.head,   // v20: cabeça um pouco maior (proporção estilo Fortnite)
+    shoulderW: 0.80 * BT.shoulder, clavX: 0.18,
     uArm: 1.32 * BT.arm * H, fArm: 1.22 * BT.arm * H, hand: 0.5, foot: 0.62
   };
   P.hipH = P.thigh + P.shin + P.ankle;
@@ -259,7 +260,11 @@ export function createCharacter(skinKey, opts){
 
   // ------------ peito ------------
   const cH = P.chestH;
-  add(J.chest, lathe([[0.001, -0.02], [0.66 * B, 0.0], [0.78 * B, cH * 0.35], [0.82 * B, cH * 0.62], [0.7 * B, cH * 0.86], [0.36, cH * 1.0], [0.001, cH * 1.02]], 32), topMat, V(0, 0, 0), null, V(1, 1, 0.68));
+  add(J.chest, lathe([[0.001, -0.02], [0.66 * B, 0.0], [0.79 * B, cH * 0.32], [0.86 * B, cH * 0.6], [0.8 * B, cH * 0.82], [0.5, cH * 0.97], [0.001, cH * 1.02]], 32), topMat, V(0, 0, 0), null, V(1, 1, 0.7));
+  // v20: trapézios (ligam pescoço aos ombros — acabam com o ar de "boneco de madeira")
+  for(const sx of [1, -1]) add(J.chest, sphere(0.36 * B, 18, 12), topMat, V(sx * 0.4 * B, cH * 0.88, -0.05), [0, 0, -sx * 0.35], V(1.55, 0.6, 1.0));
+  // peitorais / omoplatas suaves
+  for(const sx of [1, -1]){ add(J.chest, sphere(0.34 * B, 18, 12), topMat, V(sx * 0.3 * B, cH * 0.62, 0.3 * B), null, V(1.15, 0.85, 0.75)); add(J.chest, sphere(0.34 * B, 18, 12), topMat, V(sx * 0.32 * B, cH * 0.64, -0.3 * B), null, V(1.1, 0.95, 0.6)); }
   // gola
   add(J.chest, torus(0.3, 0.07, 8, 28), S.outfit === 'hoodie' ? mTop2 : mTop2, V(0, cH * 0.96, 0), [Math.PI / 2, 0, 0], V(1, 0.9, 1));
   if(S.outfit === 'jacket' || S.outfit === 'hoodie'){
@@ -293,7 +298,8 @@ export function createCharacter(skinKey, opts){
   // ombros (deltoides) + ombreiras
   for(const sd of ['L', 'R']){
     const u = J['uArm' + sd];
-    add(u, sphere(0.34 * B, 20, 14), armor ? mGold : topMat, V(0, -0.06, 0), null, V(1.05, 1, 1));
+    const ssx = sd === 'L' ? 1 : -1;
+    add(u, sphere(0.37 * B, 20, 14), armor ? mGold : topMat, V(-ssx * 0.05, -0.1, 0), null, V(1.12, 1.05, 1.02));   // v20: deltoide mais cheio
     if(armor || S.outfit === 'vest') add(u, sphere(0.4 * B, 18, 10, ), armor ? mGold : mTop2, V(0, 0.02, 0), null, V(1.05, 0.55, 1.05));
   }
 
@@ -316,20 +322,20 @@ export function createCharacter(skinKey, opts){
     const u = J['uArm' + sd], f = J['fArm' + sd], h = J['hand' + sd];
     const sleeveLong = S.outfit !== 'tshirt' && S.outfit !== 'vest';
     // braço superior: manga ou pele
-    add(u, limb(P.uArm, 0.27 * B, 0.21 * B, 0.03 * B), sleeveLong || armor ? topMat : mSkin);
+    add(u, limb(P.uArm, 0.3 * B, 0.23 * B, 0.06 * B), sleeveLong || armor ? topMat : mSkin);   // v20: bíceps
     if(!sleeveLong && !armor){
-      add(u, limb(P.uArm * 0.42, 0.3 * B, 0.27 * B, 0.01), topMat, V(0, 0, 0)); // manga curta
+      add(u, limb(P.uArm * 0.42, 0.33 * B, 0.3 * B, 0.01), topMat, V(0, 0, 0)); // manga curta
     }
     // antebraço
-    add(f, limb(P.fArm, 0.21 * B, 0.15 * B, 0.035 * B), sleeveLong ? topMat : mSkin);
+    add(f, limb(P.fArm, 0.235 * B, 0.16 * B, 0.055 * B), sleeveLong ? topMat : mSkin);
     if(sleeveLong) add(f, torus(0.16 * B, 0.05, 8, 20), mTop2, V(0, -P.fArm + 0.12, 0), [Math.PI / 2, 0, 0], null, { fine: true });
     if(armor) add(f, limb(P.fArm * 0.6, 0.25 * B, 0.2 * B, 0.02), mGold, V(0, -P.fArm * 0.35, 0));
     // cotovelo
-    add(f, sphere(0.2 * B, 14, 10), sleeveLong ? topMat : mSkin, V(0, 0, 0));
+    add(f, sphere(0.225 * B, 14, 10), sleeveLong ? topMat : mSkin, V(0, 0, -0.01));
     // MÃO: palma + dedos articulados
     const gloveMat = (S.outfit === 'armor' || S.outfit === 'vest') ? mGlove : mSkin;
     const sx = sd === 'L' ? 1 : -1;
-    add(h, box(0.3, 0.36, 0.15, 0.06), gloveMat, V(0, -0.18, 0));
+    add(h, box(0.32, 0.38, 0.17, 0.07), gloveMat, V(0, -0.18, 0));
     const fingers = [];
     for(let i = 0; i < 4; i++){
       const fx = (-0.105 + i * 0.07) * sx * -1;
@@ -356,9 +362,10 @@ export function createCharacter(skinKey, opts){
   // ------------ pernas ------------
   for(const sd of ['L', 'R']){
     const t = J['thigh' + sd], s = J['shin' + sd], f = J['foot' + sd], toe = J['toe' + sd];
-    add(t, limb(P.thigh, 0.36 * B, 0.25 * B, 0.04 * B), mPant);
+    add(t, limb(P.thigh, 0.38 * B, 0.26 * B, 0.06 * B), mPant);
     add(s, sphere(0.24 * B, 14, 10), mPant, V(0, 0, 0.02));
-    add(s, limb(P.shin, 0.25 * B, 0.18 * B, 0.045 * B), mPant);
+    add(s, limb(P.shin, 0.26 * B, 0.18 * B, 0.05 * B), mPant);
+    add(s, sphere(0.2 * B, 14, 10), mPant, V(0, -P.shin * 0.3, -0.07), null, V(1.05, 1.7, 0.95));   // v20: gémeos
     if(S.outfit === 'vest' || armor) add(s, box(0.34, 0.36, 0.12, 0.06), armor ? mGold : mBelt, V(0, -0.12, 0.2), [0.12, 0, 0], null, { fine: true }); // joelheira
     // bota: cano + pé
     add(s, lathe([[0.2, -P.shin - 0.02], [0.22, -P.shin * 0.72], [0.24, -P.shin * 0.56], [0.001, -P.shin * 0.55]], 18), mBoot);
@@ -371,7 +378,7 @@ export function createCharacter(skinKey, opts){
 
   // ------------ pescoço e cabeça ------------
   const R = P.headR;
-  add(J.neck, cyl(0.21, 0.25, P.neck + 0.12, 16), mSkin, V(0, P.neck / 2, 0));
+  add(J.neck, cyl(0.24, 0.3, P.neck + 0.12, 16), mSkin, V(0, P.neck / 2, 0));
   const hc = V(0, R * 0.95, 0.02); // centro da cabeça no joint
   // crânio + mandíbula + bochechas
   add(J.head, sphere(R, 32, 24), mSkin, hc, null, V(0.94, 1.06, 1.0));

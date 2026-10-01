@@ -16,6 +16,7 @@ import { Mat } from '../engine/materials.js';
 import { Wind } from '../anim/secondary.js';
 import { makeBattleBus } from './bus.js';
 
+const SKINS_OK = (k) => typeof k === 'string' && k.length < 24;
 const PARTY = [
   { skin: 'red', name: 'Raven_BR', pitch: 120, x: -4.8, z: -2.6, yaw: 0.3 },
   { skin: 'pink', name: 'SkyeTV', pitch: 230, x: 4.8, z: -2.6, yaw: -0.3 },
@@ -177,11 +178,19 @@ export class Lobby {
     const old = a.anim.pickaxe; if(old && old.parent) old.parent.remove(old);
     a.anim.setPickaxe(createPickaxe(style)); a.anim.play('pickaxeSwing3');
   }
-  setParty(on){
+  /** v20: mostra no lobby os jogadores reais da sala (até 3) em vez do grupo fictício */
+  setRoster(list){
+    const key = list ? list.map(p => p.id + ':' + p.skin).join('|') : '';
+    if(key === this._rosterKey) return; this._rosterKey = key;
+    if(!list || !list.length){ this.setParty(this.app.settings.party); return; }
+    this.setParty(true, list.slice(0, 3).map((p, i) => Object.assign({}, PARTY[i], { skin: p.skin && SKINS_OK(p.skin) ? p.skin : PARTY[i].skin, name: p.name })));
+  }
+  setParty(on, custom){
+    if(!custom) this._rosterKey = '';
     this.members.forEach(m => { this.scene.remove(m.a.root); disposeCharacter(m.a.ch); });
     this.members = [];
     if(!on) return;
-    PARTY.forEach((p, i) => {
+    (custom || PARTY).forEach((p, i) => {
       const a = this._makeActor(p.skin, undefined, ['machado', 'cristal', 'doce', 'martelo'][i % 4]);
       a.root.position.set(p.x, 0, p.z); a.root.rotation.y = p.yaw; this.scene.add(a.root);
       if(i === 1){ a.anim.setWeapon(createWeapon('rifle')); a.anim.pickaxe.visible = false; }

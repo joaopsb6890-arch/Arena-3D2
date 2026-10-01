@@ -15,7 +15,7 @@ let MQ = 'alta';
 function applyQ(m){
   if(!m || !m.isMeshPhysicalMaterial) return;
   const u = m.userData; if(u._sh === undefined){ u._sh = m.sheen; u._cc = m.clearcoat; }
-  const low = MQ === 'baixa';
+  const low = MQ === 'baixa' || MQ === 'media';   // v20: Média também sem sheen/clearcoat
   m.sheen = low ? 0 : u._sh; m.clearcoat = low ? 0 : u._cc;
 }
 export function setMaterialQuality(q){ MQ = q; all.forEach(applyQ); }

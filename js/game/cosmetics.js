@@ -38,7 +38,7 @@ export const PICKAXES = {
   neon:    { name: 'Picareta Néon', rarity: 'epico', trail: 0xff3ea5, spark: 0x67e8f9, pitch: 1.2 }
 };
 export const GLIDERS = {
-  classico: { name: 'Planador Clássico', rarity: 'comum' },
+  classico: { name: 'Asa Delta Clássica', rarity: 'comum' },
   guardachuva: { name: 'Guarda-chuva Vitória', rarity: 'raro' },
   asas:     { name: 'Asas de Dragão',     rarity: 'epico' },
   jato:     { name: 'Jato Propulsor',     rarity: 'lendario' },
@@ -53,7 +53,10 @@ export const GLIDERS = {
   pipa:     { name: 'Pipa de Papel',      rarity: 'incomum' },
   dirigivel:{ name: 'Mini Dirigível',     rarity: 'lendario' },
   fenix:    { name: 'Asas de Fénix',      rarity: 'lendario' },
-  nuvem:    { name: 'Nuvem Fofa',         rarity: 'raro' }
+  nuvem:    { name: 'Nuvem Fofa',         rarity: 'raro' },
+  // v20
+  deltapro: { name: 'Delta Pro',          rarity: 'epico' },
+  falcao:   { name: 'Asa de Falcão',      rarity: 'lendario' }
 };
 export const CONTRAILS = {
   nenhum:  { name: 'Sem rastro', rarity: 'comum', color: null },
@@ -78,7 +81,10 @@ export const SHOP_EMOTES = {
   galinha: { name: 'Galinha', rarity: 'incomum' },
   moinho: { name: 'Moinho', rarity: 'incomum' },
   toprock: { name: 'Toprock', rarity: 'epico' },
-  palmas: { name: 'Palmas no Alto', rarity: 'comum' }
+  palmas: { name: 'Palmas no Alto', rarity: 'comum' },
+  saudacao: { name: 'Continência', rarity: 'comum' },
+  minhoca: { name: 'A Minhoca', rarity: 'epico' },
+  marcha: { name: 'Marcha', rarity: 'incomum' }
 };
 
 export const CATS = {

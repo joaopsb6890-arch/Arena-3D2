@@ -27,7 +27,7 @@ export const QUALITY = {
   // Agora renderiza à resolução nativa (limitada a 1×) com FXAA barato e o piso adaptativo é alto (0.85).
   baixa:  { label: 'Baixa',  pr: 1.0, shadows: false, shadowMap: 1024, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 1, minDyn: 0.85, tex: 512 },
   media:  { label: 'Média',  pr: 1.0,  shadows: true,  shadowMap: 2048, ao: false, bloom: true,  smaa: true,  maxPR: 1.25, minDyn: 0.75, tex: 1024 },
-  alta:   { label: 'Alta',   pr: 1.0,  shadows: true,  shadowMap: 2048, ao: true,  bloom: true,  smaa: true,  maxPR: 1.5, minDyn: 0.7, tex: 1024 },
+  alta:   { label: 'Alta',   pr: 1.0,  shadows: true,  shadowMap: 2048, ao: false,  bloom: true,  smaa: true,  maxPR: 1.5, minDyn: 0.7, tex: 1024 },
   ultra:  { label: 'Ultra',  pr: 1.25, shadows: true,  shadowMap: 4096, ao: true,  bloom: true,  smaa: true,  maxPR: 2,   minDyn: 0.7, tex: 2048 }
 };
 
@@ -145,7 +145,8 @@ export class Renderer {
     if(this.camera !== this.renderPass.camera){ this.renderPass.camera = this.camera; if(this.gtao) this.gtao.camera = this.camera; }
     this.r.info.reset();
     // v15: em Média o mapa de sombras é redesenhado em frames alternados (metade do custo do passe de sombras)
-    if(this.qualityName === 'media'){ this.r.shadowMap.autoUpdate = false; this._sf = (this._sf || 0) + 1; if(this._sf % 2 === 0) this.r.shadowMap.needsUpdate = true; }
+    // v20: Alta também (o passe de sombras era ~20% das draw calls)
+    if(this.qualityName === 'media' || this.qualityName === 'alta'){ this.r.shadowMap.autoUpdate = false; this._sf = (this._sf || 0) + 1; if(this._sf % 2 === 0) this.r.shadowMap.needsUpdate = true; }
     else this.r.shadowMap.autoUpdate = true;
     this.composer.render(dt);
     // estatísticas + resolução adaptativa (mantém ~60fps)
@@ -158,7 +159,7 @@ export class Renderer {
         const mn = this.q.minDyn || 0.7; if(this._lowT >= 3 && this.dynPR > mn){ this.dynPR = Math.max(mn, this.dynPR - 0.08); this._lowT = 0; this._applyPR(); }
         if(this._highT >= 8 && this.dynPR < 1){ this.dynPR = Math.min(1, this.dynPR + 0.08); this._highT = 0; this._applyPR(); }
       }
-      if(this.onStats) this.onStats({ fps: this.fps, ms: this.frameMs, calls: this.r.info.render.calls, tris: this.r.info.render.triangles, pr: this.r.getPixelRatio() });
+      if(this.onStats) this.onStats(Object.assign({ minDyn: this.dynPR <= (this.q.minDyn || 0.7) + 0.001 }, { fps: this.fps, ms: this.frameMs, calls: this.r.info.render.calls, tris: this.r.info.render.triangles, pr: this.r.getPixelRatio() }));
     }
   }
 }

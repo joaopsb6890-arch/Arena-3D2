@@ -43,7 +43,7 @@ export class NetSync {
       const list = [];
       for(const a of this.m.actors){
         if(!a.local) continue;
-        const b = a.body, f = (a.crouch ? 1 : 0) | (a.aiming ? 2 : 0) | (a.alive ? 4 : 0) | (a.onBus ? 8 : 0) | (b.grounded ? 16 : 0) | (a.sprint ? 32 : 0) | (a.root.visible ? 64 : 0);
+        const b = a.body, f = (a.crouch ? 1 : 0) | (a.aiming ? 2 : 0) | (a.alive ? 4 : 0) | (a.onBus ? 8 : 0) | (b.grounded ? 16 : 0) | (a.sprint ? 32 : 0) | (a.root.visible ? 64 : 0) | (a.climbing ? 128 : 0) | (a.rail ? 256 : 0) | (a.kart ? 512 : 0);
         list.push([a.netId, r1(b.pos.x), r2(b.pos.y), r1(b.pos.z), r2(a.yaw), r2(a.pitch), r1(b.vel.x), r1(b.vel.y), r1(b.vel.z), MODE_C[a.mode] || 0, W_C[a.using > 0 ? 'none' : a.weaponType] ?? 0, f, Math.round(a.hp), Math.round(a.shield), r2(a.fallInput.dive), r2(a.fallInput.bank)]);
       }
       if(list.length) this.s.sendState({ t: r2(this.t), a: list });
@@ -99,7 +99,7 @@ export class NetSync {
     b.vel.copy(n.vel);
     b.grounded = !!(n.flags & 16);
     a.yaw += wrap(n.yaw - a.yaw) * (1 - Math.exp(-dt * 20)); a.pitch = n.pitch;
-    a.crouch = !!(n.flags & 1); a.aiming = !!(n.flags & 2); a.sprint = !!(n.flags & 32);
+    a.crouch = !!(n.flags & 1); a.aiming = !!(n.flags & 2); a.sprint = !!(n.flags & 32); a.climbing = !!(n.flags & 128); a.remoteRail = !!(n.flags & 256); a.remoteKart = !!(n.flags & 512); if(this.m.v20) this.m.v20.remoteKart(a);
     a.fallInput.dive = n.dive || 0; a.fallInput.bank = n.bank || 0;
     if(a.alive && n.mode !== a.mode){ const prev = a.mode; a.setMode(n.mode); if(n.mode === 'ground' && prev === 'glide') a.anim.play('landGlide'); }
     if(a.alive){

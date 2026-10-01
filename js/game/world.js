@@ -12,7 +12,7 @@ import { Wind } from '../anim/secondary.js';
 import { planPOIs, buildPOIs, ZONES, ROADS, LOCATIONS, palmGeo, cactusGeo, bushGeo, flowerGeo } from './pois.js';
 import { createWeapon, RARITY, GUNS, rollRarity } from './weapons.js';
 
-export const MAP_R = 600;   // v18: ilha maior (era 420 → ~2× a área)
+export const MAP_R = 920;   // v20: 780 → 920 (~1.4× a área)   // v19: ilha ainda maior (600 → 780, ~1.7× a área)
 export const GRID = 16, WALL_H = 13;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -24,6 +24,9 @@ export const WATER_Y = -1.4;
 // v18: Cratera Vulcânica (cone com cratera e lago de lava) no nordeste
 export const VOLCANO = { x: 335, z: 335, r: 100, h: 60, cr: 21 };
 export const LAVA_Y = 37.5;
+// v19: Pântano Sombrio (água rasa com ilhotas) e Estância Gelada (colinas nevadas)
+export const SWAMP = { x: -640, z: 240, r: 62 };
+export const SNOWF = { x: -470, z: -500, r: 95 };
 export function lavaAt(x, z){ return Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < VOLCANO.cr - 1 ? LAVA_Y : null; }
 function volcanoH(x, z){
   const vx = x - VOLCANO.x, vz = z - VOLCANO.z, vd = Math.sqrt(vx * vx + vz * vz);
@@ -60,20 +63,31 @@ export function heightAt(x, z){
   if(dd2 < DESERT.r * DESERT.r){ const w = 1 - Math.sqrt(dd2) / DESERT.r; h += (Math.sin(x / 19 + z / 31) * 2.2 + Math.sin(x / 7.3 - z / 11) * 0.5) * Math.min(1, w * 2.5); }
   // v18: vulcão
   h += volcanoH(x, z);
+  // v19: colinas da Estância Gelada
+  const sx = x - SNOWF.x, sz = z - SNOWF.z, sd = Math.sqrt(sx * sx + sz * sz);
+  if(sd < SNOWF.r + 40){ const u = 1 - THREE.MathUtils.smoothstep(sd, SNOWF.r - 30, SNOWF.r + 40); h += u * (14 + Math.sin(x / 23) * Math.cos(z / 19) * 6); }
   // achata pontos de interesse
   for(const f of FLATS){ const dd = Math.hypot(x - f[0], z - f[1]); if(dd < f[2] + 18){ const k = THREE.MathUtils.smoothstep(dd, f[2], f[2] + 18); h = h * k + f[3] * (1 - k); } }
+  // v19: pântano — bacia rasa com ilhotas
+  const pw = Math.hypot(x - SWAMP.x, z - SWAMP.z);
+  if(pw < SWAMP.r + 16){ const k = THREE.MathUtils.smoothstep(pw, SWAMP.r - 10, SWAMP.r + 16), isl = Math.max(0, Math.sin(x / 9.5) * Math.cos(z / 8.3) + Math.sin(x / 5.1 + z / 7.7) * 0.4) * 3.4; h = h * k + (-3.4 + isl) * (1 - k); }
   // leito do rio (depois dos achatamentos, para a água atravessar tudo)
   const rd = riverDist(x, z);
   if(rd < 17){ const k = THREE.MathUtils.smoothstep(rd, 5, 17); h = Math.min(h, h * k + -3.1 * (1 - k)); }
+  // v19: baía do Porto Pesqueiro (o mar entra até aos cais; o mapa cresceu)
+  const bk = bayK(x, z); if(bk > 0) h = h * (1 - bk) + -7.6 * bk;
   // borda da ilha afunda
   h -= Math.max(0, d - MAP_R + 30) * 0.6;
   return h;
 }
+function bayK(x, z){ if(x < 532 || z < -100 || z > 64) return 0; return THREE.MathUtils.smoothstep(x, 535, 572) * (1 - THREE.MathUtils.smoothstep(Math.abs(z + 18), 50, 78)); }
 /** v16: superfície da água em (x,z) ou null (lago + rio) */
 export function waterAt(x, z){
   if(FLAT_WORLD) return null;
   if(Math.hypot(x + 60, z + 40) < 29) return WATER_Y;
   if(riverDist(x, z) < 9) return WATER_Y;
+  if(Math.hypot(x - SWAMP.x, z - SWAMP.z) < SWAMP.r - 6) return WATER_Y;
+  if(bayK(x, z) > 0.6) return -6;
   return null;
 }
 export { riverDist };
@@ -169,7 +183,7 @@ export class World {
   // ---------- terreno ----------
   _planHouses(){
     this.housePlan = [];
-    const spots = [[60, 40], [-90, 70], [120, -110], [-140, -80], [20, -170], [190, 90], [-40, 200], [-220, 20], [330, 40], [-330, -40], [80, 330], [-150, 385], [420, -200], [-200, -430]];   // v18: +6 casas no anel exterior
+    const spots = [[60, 40], [-90, 70], [120, -110], [-140, -80], [20, -170], [190, 90], [-40, 200], [-220, 20], [330, 40], [-330, -40], [80, 330], [-150, 385], [420, -200], [-200, -430], [560, 430], [-570, -300], [300, 650], [610, -300], [-400, 610], [250, -640], [-720, 20], [700, 500], [-700, 450], [-560, -660], [140, -820], [560, -640], [-80, 850], [-850, 110]];   // v18/v19: casas no anel exterior
     spots.forEach(([x, z], i) => {
       const w = i % 3 === 0 ? 3 : 2, d = 2;
       this.housePlan.push({ x, z, w, d, rot: 0 });
@@ -178,12 +192,12 @@ export class World {
     FLATS.push([-60, -40, 26, -2.2]); // lago
   }
   _ground(){
-    const seg = this.q === 'baixa' ? 200 : this.q === 'media' ? 270 : 330;   // v18: mapa maior → mais segmentos (≈4.4 u por quadrado em Alta)
+    const seg = this.q === 'baixa' ? 240 : this.q === 'media' ? 320 : 390;   // v19: mapa 780   // v18: mapa maior → mais segmentos (≈4.4 u por quadrado em Alta)
     const g = new THREE.PlaneGeometry(MAP_R * 2.4, MAP_R * 2.4, seg, seg); g.rotateX(-Math.PI / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3), spl = new Float32Array(pos.count * 4);
     const SS = THREE.MathUtils.smoothstep, addW = (i, ch, w) => { spl[i * 4 + ch] = Math.max(spl[i * 4 + ch], w); };
     const cA = new THREE.Color(0x5f8f3e), cB = new THREE.Color(0x7aa04a), cDirt = new THREE.Color(0x8a7550), cSand = new THREE.Color(0xcdb98a);
-    const cBas = new THREE.Color(0x3a3431), cAsh = new THREE.Color(0x5b534d), cDes = new THREE.Color(0xe0c48c), cSnow = new THREE.Color(0xf1f5f9), cBed = new THREE.Color(0x7c6f55), cRoad = new THREE.Color(0x9a8260), cPave = new THREE.Color(0x6b6f76);
+    const cBas = new THREE.Color(0x3a3431), cAsh = new THREE.Color(0x5b534d), cDes = new THREE.Color(0xe0c48c), cSnow = new THREE.Color(0xf1f5f9), cBed = new THREE.Color(0x7c6f55), cRoad = new THREE.Color(0x9a8260), cPave = new THREE.Color(0x6b6f76), cSwamp = new THREE.Color(0x4b5a2c);
     for(let i = 0; i < pos.count; i++){
       const x = pos.getX(i), z = pos.getZ(i), h = heightAt(x, z); pos.setY(i, h);
       const n = Math.sin(x * 0.05) * Math.cos(z * 0.043) * 0.5 + 0.5;
@@ -198,6 +212,8 @@ export class World {
         const vD = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
         if(vD < VOLCANO.r + 14){ const w = SS(VOLCANO.r + 14 - vD, 0, 45); c.lerp(vD < VOLCANO.cr + 12 ? cBas : cAsh, w * 0.9); addW(i, 1, w * 0.75); }
         else if(h > 34){ const w = SS(h, 34, 46); c.lerp(cSnow, w); addW(i, 2, w); }
+        const sD = Math.hypot(x - SNOWF.x, z - SNOWF.z); if(sD < SNOWF.r + 30){ const w = SS(SNOWF.r + 30 - sD, 0, 30); c.lerp(cSnow, w); addW(i, 2, w); }
+        const wD = Math.hypot(x - SWAMP.x, z - SWAMP.z); if(wD < SWAMP.r + 20){ const w = SS(SWAMP.r + 20 - wD, 0, 25); c.lerp(cSwamp, w * 0.85); addW(i, 3, w * 0.6); }
         const rd = riverDist(x, z); if(rd < 16){ const w = SS(16 - rd, 0, 5) * 0.85; c.lerp(rd < 9 ? cBed : cSand, w); addW(i, rd < 9 ? 3 : 0, w); }
         for(const r of ROADS){ const dx = r[2] - r[0], dz = r[3] - r[1], t = Math.max(0, Math.min(1, ((x - r[0]) * dx + (z - r[1]) * dz) / (dx * dx + dz * dz))); const dr = Math.hypot(x - r[0] - dx * t, z - r[1] - dz * t); if(dr < 6){ c.lerp(cRoad, (1 - dr / 6) * 0.7); addW(i, 3, Math.min(1, (1 - dr / 6) * 1.3)); } }
         for(const Z of ZONES){ if(x > Z[0] - 4 && x < Z[2] + 4 && z > Z[1] - 4 && z < Z[3] + 4 && !Z[4]){ c.lerp(cPave, 0.8); addW(i, 1, 0.9); } }
@@ -275,6 +291,10 @@ export class World {
     m.userData.envBoost = 3;
     this.lake = new THREE.Mesh(new THREE.CircleGeometry(30, 48), m); this.lake.rotation.x = -Math.PI / 2; this.lake.position.set(-60, -1.4, -40);
     this.group.add(this.lake);
+    // v19: água do pântano (esverdeada, mais turva)
+    const sm = m.clone(); sm.color = new THREE.Color(0x3d5a2a); sm.opacity = 0.9;
+    this.swamp = new THREE.Mesh(new THREE.CircleGeometry(SWAMP.r - 4, 56), sm); this.swamp.rotation.x = -Math.PI / 2; this.swamp.position.set(SWAMP.x, WATER_Y, SWAMP.z);
+    this.group.add(this.swamp);
     // fonte na praça
     const fx = 0, fz = -18, base = heightAt(fx, fz);
     const bowl = new THREE.Mesh(new THREE.CylinderGeometry(5, 5.6, 1.6, 32, 1, true), Mat.rock(0x9ca3af)); bowl.position.set(fx, base + 0.8, fz);
@@ -437,7 +457,7 @@ export class World {
         geo.applyMatrix4(m.matrixWorld);
         buckets.get(k).geos.push(geo);
         // a peça original fica só para raycast (tiros/câmera) — invisível, não gera draw call
-        if(this.raycastTargets.includes(m)){ m.material = HIDDEN; m.castShadow = false; } else { g.remove(m); m.geometry.dispose(); }
+        if(this.raycastTargets.includes(m)){ m.material = HIDDEN; m.castShadow = false; m.visible = false; } else { g.remove(m); m.geometry.dispose(); }
       });
     }
     for(const b of buckets.values()){
@@ -474,7 +494,7 @@ export class World {
   }
   _trees(){
     const G = this.treeG = this._treeGeos();
-    const count = this.q === 'baixa' ? 180 : this.q === 'media' ? 280 : 400;   // v18: mapa ~2× maior
+    const count = this.q === 'baixa' ? 290 : this.q === 'media' ? 460 : 660;   // v20: mapa 920
     const trunkM = Mat.wood(0x6b4a2f), leafM = windify(new THREE.MeshStandardMaterial({ color: 0x4f8a35, roughness: 0.85, flatShading: false }), 0.06, 'leaf');
     const pineM = windify(new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }), 0.05, 'pine');
     const half = Math.ceil(count / 2);
@@ -516,7 +536,7 @@ export class World {
     this.treeMeshes = null;
   }
   _rocks(){
-    const count = this.q === 'baixa' ? 80 : 140;
+    const count = this.q === 'baixa' ? 100 : 190;
     const { geo, rockMat } = this._rockGeo();
     const im = new THREE.InstancedMesh(geo, rockMat, count);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
@@ -622,6 +642,7 @@ export class World {
     if(!this.empty){
       for(const Z of ZONES) if(x > Z[0] - r && x < Z[2] + r && z > Z[1] - r && z < Z[3] + r) return false;
       if(riverDist(x, z) < 11 + r * 0.5) return false;
+      if(Math.hypot(x - SWAMP.x, z - SWAMP.z) < SWAMP.r - 6 && heightAt(x, z) < WATER_Y + 0.3) return false;   // v19: não nasce dentro da água do pântano
       if(Math.abs(z + 117.5) < 6 + r && x > -134 && x < -70) return false;
     }
     return true;
@@ -641,7 +662,7 @@ export class World {
     for(let j = 0; j < N; j++) for(let i = 0; i < N; i++){
       const x = O + (i + 0.5) * st, z = O + (j + 0.5) * st, h = heightAt(x, z), d = Math.hypot(x, z);
       let ok = d < MAP_R - 34 && h > -0.6 && this._freeSpot(x, z, 1);
-      if(ok && !this.empty) ok = Math.hypot(x - DESERT.x, z - DESERT.z) > DESERT.r - 6 && h < 32 && Math.hypot(x - VOLCANO.x, z - VOLCANO.z) > VOLCANO.r * 0.78 && !(Math.abs(x - 500) < 60 && Math.abs(z + 30) < 50);
+      if(ok && !this.empty) ok = Math.hypot(x - DESERT.x, z - DESERT.z) > DESERT.r - 6 && h < 32 && Math.hypot(x - VOLCANO.x, z - VOLCANO.z) > VOLCANO.r * 0.78 && !(Math.abs(x - 500) < 60 && Math.abs(z + 30) < 50) && Math.hypot(x - SNOWF.x, z - SNOWF.z) > SNOWF.r + 6 && Math.hypot(x - 645, z - 238) > 48;
       const k = (j * N + i) * 4; data[k] = toH(h - 0.05); data[k + 1] = toH(ok ? 1 : 0); data[k + 2] = 0; data[k + 3] = toH(1);
     }
     const hm = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.HalfFloatType);
@@ -754,12 +775,14 @@ export class World {
   }
   _campfires(){
     this.fires = [];
+    this.fireLight = new THREE.PointLight(0xff8a3d, 0, 30, 2); this.fireLight.castShadow = false; this.group.add(this.fireLight);
     [[14, 30], [-120, -30], [100, 150]].forEach(([x, z]) => {
       const y = heightAt(x, z), g = new THREE.Group(); g.position.set(x, y, z);
       for(let i = 0; i < 4; i++){ const l = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 3.2, 8), Mat.wood(0x4a2f1c)); l.rotation.set(Math.PI / 2 - 0.25, i * Math.PI / 2, 0); l.position.y = 0.4; g.add(l); }
       for(let i = 0; i < 9; i++){ const s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45, 0), Mat.rock(0x6b7280)); const a = i / 9 * Math.PI * 2; s.position.set(Math.cos(a) * 1.8, 0.2, Math.sin(a) * 1.8); g.add(s); }
       g.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
-      const light = new THREE.PointLight(0xff8a3d, 30, 30, 2); light.position.y = 2.2; light.castShadow = false; g.add(light);
+      const light = null;   // v20: uma só luz dinâmica que segue a fogueira mais próxima (menos luzes = shader mais leve)
+      const ember = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), Mat.emissive(0xff6a1a, 3)); g.add(ember);
       this.group.add(g);
       const pos = V(x, y + 0.8, z);
       this.particles.addEmitter({ type: 'fire', rate: 26, pos: pos.clone(), opt: { size: 1.6 } });
@@ -899,21 +922,24 @@ export class World {
     WIND_U.uTime.value = this.t;
     WIND_U.uWind.value.set(Wind.dir.x * Wind.strength * 0.06, 0, Wind.dir.z * Wind.strength * 0.06);
     if(this.waterNormal){ this.waterNormal.offset.x += dt * 0.02; this.waterNormal.offset.y += dt * 0.013; }
-    for(const f of this.fires) if(f.light) f.light.intensity = f.base * (0.8 + Math.sin(this.t * 13) * 0.08 + Math.sin(this.t * 7.3) * 0.1 + Math.random() * 0.06);
+    if(this.fireLight && camera){
+      if(((this._flI = (this._flI || 0) + 1) & 15) === 0){ let best = null, bd = 1e9; for(const f of this.fires){ const d = f.pos.distanceToSquared(camera.position); if(d < bd){ bd = d; best = f; } } this._flF = bd < 90 * 90 ? best : null; }
+      const fl = this.fireLight; if(this._flF){ fl.position.copy(this._flF.pos).setY(this._flF.pos.y + 1.4); fl.intensity = 30 * (0.8 + Math.sin(this.t * 13) * 0.08 + Math.sin(this.t * 7.3) * 0.1 + Math.random() * 0.06); } else fl.intensity = 0;
+    }
     for(const c of this.chests){
       if(c.openT > 0 && c.openT < 1){ c.openT = Math.min(1, c.openT + dt * 2.5); c.lid.rotation.x = -1.9 * (1 - Math.pow(1 - c.openT, 3)); c.glow.intensity = 3 + (1 - c.openT) * 12; }
       else if(!c.opened) c.glow.intensity = 2.5 + Math.sin(this.t * 3) * 0.8;
       else c.glow.intensity *= 0.97;
     }
     // v16: só anima/mostra loot perto da câmara (o resto fica invisível → menos draw calls)
-    const cp = camera ? camera.position : null;
+    const cp = camera ? camera.position : null; this._pkD2 = this.q === 'baixa' ? 95 * 95 : 135 * 135;   // v20: loot só perto
     for(const p of this.pickups){
-      if(cp){ const dx = p.pos.x - cp.x, dz = p.pos.z - cp.z, vis = dx * dx + dz * dz < 190 * 190; p.group.visible = vis; if(!vis) continue; }
+      if(cp){ const dx = p.pos.x - cp.x, dz = p.pos.z - cp.z, vis = dx * dx + dz * dz < this._pkD2; p.group.visible = vis; if(!vis) continue; }
       p.t += dt; p.group.rotation.y += dt * 1.5; p.group.position.y = p.pos.y + Math.sin(p.t * 2) * 0.25;
     }
     if(this.poi && this.poi.beam) this.poi.beam.rotation.y += dt * 0.7;
     // v18: moinhos, radar, gema do templo, luz da antena, lava
-    if(this.poi && this.poi.spinners) for(const sp of this.poi.spinners){ sp.o.rotation[sp.ax] += dt * sp.sp; if(sp.bob) sp.o.position.y = sp.bob + Math.sin(this.t * 1.6) * 0.4; }
+    if(this.poi && this.poi.spinners) for(const sp of this.poi.spinners){ sp.o.rotation[sp.ax] += dt * sp.sp; if(sp.cabs) for(const c of sp.cabs) c.rotation.z = -sp.o.rotation.z; if(sp.bob) sp.o.position.y = sp.bob + Math.sin(this.t * 1.6) * 0.4; }
     if(this.poi && this.poi.blinks) for(const b of this.poi.blinks) b.visible = (this.t % 1.4) < 0.7;
     if(this.lavaU) this.lavaU.value = this.t;
     if(this.grassU && camera){ this.grassU.uCam.value.copy(camera.position); }
@@ -925,7 +951,7 @@ export class World {
         const pk = new Set(this.pickups.map(p => p.group)); for(const c of this.group.children){ if(!c.isGroup || !c.children.length || pk.has(c)) continue; bs.setFromObject(c); if(bs.isEmpty()) continue; bs.getBoundingSphere(sp); if(sp.radius < 14) this._far.push({ o: c, x: sp.center.x, z: sp.center.z, r: sp.radius, v: c.visible }); }
         this._farI = 0;
       }
-      const D = this.q === 'baixa' ? 190 : 280, cx = camera.position.x, cz = camera.position.z, L = this._far, n = Math.min(L.length, 120);
+      const D = this.q === 'baixa' ? 160 : this.q === 'ultra' ? 280 : 220, cx = camera.position.x, cz = camera.position.z, L = this._far, n = Math.min(L.length, 120);
       for(let k = 0; k < n; k++){ const e = L[this._farI = (this._farI + 1) % L.length]; const d = Math.hypot(e.x - cx, e.z - cz) - e.r; const vis = d < D; if(vis !== e.v){ e.v = vis; e.o.visible = vis; } }
     }
   }

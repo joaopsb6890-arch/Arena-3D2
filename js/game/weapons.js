@@ -394,6 +394,43 @@ export function createMedkit(){
   b.build(g); g.position.set(0, -0.05, 0.15);
   return g;
 }
+
+// v20: asa delta a sério — vela com curvatura (billow), diedro, bordo de fuga recortado entre as réguas
+// e faixas de cor por vértice; estrutura com quilha, bordos de ataque, travessa, mastro e trapézio.
+function deltaSail(o){
+  const S = o.span || 4.3, zN = o.nose || 2.7, zT = o.tipZ || -0.55, zTail = o.tail || -1.55, zTE = o.tipTE || -1.0, NU = 28, NV = 10;
+  const pos = [], col = [], idx = [], cA = new THREE.Color(o.c1 || 0xef4444), cB = new THREE.Color(o.c2 || 0xf8fafc), cC = new THREE.Color(o.c3 || 0x1f2937), c = new THREE.Color();
+  for(let j = 0; j <= NV; j++) for(let i = 0; i <= NU; i++){
+    const u = i / NU * 2 - 1, v = j / NV, au = Math.abs(u);
+    const le = zN + (zT - zN) * au, te = zTail + (zTE - zTail) * au + Math.abs(Math.sin(au * Math.PI * 3)) * 0.22;
+    const x = u * S * (1 - v * 0.04), z = le + (te - le) * v;
+    const y = Math.sin(v * Math.PI) * 0.34 * (1 - au * au) + au * 0.42 - v * au * 0.18;
+    pos.push(x, y, z);
+    const band = o.pattern === 'chevron' ? Math.floor((au * 3 - v * 1.2) + 10) % 3 : o.pattern === 'tips' ? (au > 0.7 ? 2 : au > 0.62 ? 1 : 0) : (au < 0.12 ? 1 : au > 0.78 ? 2 : (Math.floor(au * 5) % 2 ? 1 : 0));
+    c.copy(band === 0 ? cA : band === 1 ? cB : cC); if(v > 0.92) c.multiplyScalar(0.8);
+    col.push(c.r, c.g, c.b);
+  }
+  for(let j = 0; j < NV; j++) for(let i = 0; i < NU; i++){ const a = j * (NU + 1) + i, b = a + 1, d = a + NU + 1, e = d + 1; idx.push(a, d, b, b, d, e); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
+  return { geo: g, S, zN, zT, zTail };
+}
+function tubeTo(b, mat, a, c, r){ const d = c.clone().sub(a), L = d.length(); const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d.clone().normalize()); const e = new THREE.Euler().setFromQuaternion(q); b.add(mat, cyl(r, r, L, 6), a.clone().add(c).multiplyScalar(0.5), [e.x, e.y, e.z]); }
+function deltaFrame(g, b, o, sail, frameMat){
+  const Y = o.y || 2.1, wire = Mat.metal(0xd1d5db, 0.2), dark = frameMat;
+  const nose = V(0, Y + 0.05, sail.zN), tail = V(0, Y + 0.02, sail.zTail - 0.2), tipL = V(sail.S, Y + 0.42, sail.zT), tipR = V(-sail.S, Y + 0.42, sail.zT);
+  tubeTo(b, dark, nose, tail, 0.06); tubeTo(b, dark, nose, tipL, 0.055); tubeTo(b, dark, nose, tipR, 0.055);
+  const cbL = nose.clone().lerp(tipL, 0.55), cbR = nose.clone().lerp(tipR, 0.55); tubeTo(b, dark, cbL, cbR, 0.045);
+  const kp = V(0, Y + 1.2, 0.15); tubeTo(b, dark, V(0, Y, 0.15), kp, 0.04);
+  for(const p of [nose, tail, tipL, tipR]) tubeTo(b, wire, kp, p, 0.012);
+  const hub = V(0, Y - 0.02, 0.25), bl = V(0.9, 0, 0), br = V(-0.9, 0, 0);
+  tubeTo(b, dark, hub, bl, 0.035); tubeTo(b, dark, hub, br, 0.035);
+  for(const p of [nose, tail, tipL, tipR]){ tubeTo(b, wire, bl, p, 0.01); tubeTo(b, wire, br, p, 0.01); }
+  // réguas (battens) por cima da vela
+  for(let k = 1; k <= 4; k++){ for(const sd of [1, -1]){ const au = k / 5, le = V(sd * au * sail.S, Y + au * 0.42 + 0.03, sail.zN + (sail.zT - sail.zN) * au), te = V(sd * au * sail.S * 0.96, Y + au * 0.24 + 0.03, (o.tail || -1.55) + ((o.tipTE || -1.0) - (o.tail || -1.55)) * au); tubeTo(b, Mat.polymer(0x111827), le, te, 0.015); } }
+  // winglets nas pontas
+  if(o.winglets !== false) for(const tp of [tipL, tipR]){ const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute([tp.x, tp.y, tp.z + 0.2, tp.x, tp.y + 0.7, tp.z - 0.5, tp.x, tp.y, tp.z - 0.6], 3)); wg.computeVertexNormals(); const mm = Mat.paint(o.c3 || 0x1f2937).clone(); mm.side = THREE.DoubleSide; const w = new THREE.Mesh(wg, mm); w.castShadow = true; g.add(w); }
+  return { nose, tail, tipL, tipR };
+}
 export function createGlider(color, style){
   style = style || 'classico';
   const g = new THREE.Group(); g.userData.style = style;
@@ -403,7 +440,21 @@ export function createGlider(color, style){
   b.add(frame, cyl(0.04, 0.04, 1.8, 8), V(0, 0, 0), [0, 0, Math.PI / 2]);
   const bendPlane = (w, h, sag, arch) => { const pg = new THREE.PlaneGeometry(w, h, 24, 8); const pos = pg.attributes.position; for(let i = 0; i < pos.count; i++){ const x = pos.getX(i), y = pos.getY(i); pos.setZ(i, -Math.pow(x / (w / 2), 2) * sag + Math.sin((y + h / 2) / h * Math.PI) * arch); } pg.computeVertexNormals(); return pg; };
   const cloth = (c) => { const m = Mat.cloth(c, 'fabric').clone(); m.side = THREE.DoubleSide; return m; };
-  if(style === 'classico' || style === 'jato'){
+  if(style === 'classico' || style === 'deltapro' || style === 'falcao' || style === 'neon'){
+    const pal = { classico: { c1: color || 0xef4444, c2: 0xf8fafc, c3: 0x1f2937, pattern: 'bands' }, deltapro: { c1: 0x0ea5e9, c2: 0xfacc15, c3: 0x0f172a, pattern: 'chevron' }, falcao: { c1: 0x78350f, c2: 0xd6a26a, c3: 0x1c1917, pattern: 'tips', span: 4.8, tipZ: -0.2, tipTE: -1.3 }, neon: { c1: 0x0f172a, c2: 0x1e1b4b, c3: 0xf0abfc, pattern: 'tips' } }[style];
+    const sail = deltaSail(pal);
+    const sm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: style === 'neon' ? 0.3 : 0.7, metalness: style === 'neon' ? 0.4 : 0, side: THREE.DoubleSide });
+    if(style === 'neon'){ sm.emissive = new THREE.Color(0x2a0a3a); }
+    const w = new THREE.Mesh(sail.geo, sm); w.position.y = 2.1; w.castShadow = true; g.add(w); g.userData.wing = w;
+    const fr = deltaFrame(g, b, Object.assign({ y: 2.1 }, pal), sail, style === 'neon' ? Mat.emissive(0xf0abfc, 2.6).clone() : Mat.metal(0x374151, 0.3));
+    if(style === 'neon') g.userData.pulse = b.m.keys().next().value;
+    if(style === 'falcao'){
+      // penas nas pontas (primárias) + cauda em leque
+      const fm = Mat.cloth(0x3f2a1a, 'fabric').clone(); fm.side = THREE.DoubleSide;
+      for(const sd of [1, -1]) for(let k = 0; k < 5; k++){ const f = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 1.5), fm); f.rotation.x = -Math.PI / 2; f.rotation.z = sd * (0.25 + k * 0.16); f.position.set(sd * (4.5 + k * 0.08), 2.55, -0.55 - k * 0.22); f.castShadow = true; g.add(f); }
+      for(let k = 0; k < 7; k++){ const f = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 1.6), fm); f.rotation.x = -Math.PI / 2 + 0.15; f.rotation.z = (k - 3) * 0.16; f.position.set((k - 3) * 0.2, 2.05, -2.3); g.add(f); }
+    }
+  } else if(style === 'jato'){
     b.add(frame, cyl(0.03, 0.03, 2.2, 8), V(0.85, 1.0, 0), [0, 0, 0.55]).add(frame, cyl(0.03, 0.03, 2.2, 8), V(-0.85, 1.0, 0), [0, 0, -0.55]);
     const w = new THREE.Mesh(bendPlane(6, 2.6, 0.9, 0.3), (style === 'jato' ? (() => { const m = Mat.metal(0x94a3b8, 0.35).clone(); m.side = THREE.DoubleSide; return m; })() : cloth(color || 0xef4444))); w.rotation.x = -Math.PI / 2 + 0.25; w.position.y = 2.0; w.castShadow = true; g.add(w); g.userData.wing = w;
     if(style === 'jato'){
@@ -496,7 +547,7 @@ export function createGlider(color, style){
     carpet.userData.base = pg.attributes.position.array.slice(); g.userData.carpet = carpet;
     for(let i = 0; i < 14; i++) b.add(Mat.paint(0xfbbf24), cyl(0.03, 0.01, 0.5, 4), V(-2.6 + i * 0.4, 2.35, 1.4));
     b.add(Mat.cloth(0xfbbf24, 'fabric'), cyl(0.025, 0.025, 2.7, 6), V(1.4, 1.3, 0), [0, 0, 0.6]).add(Mat.cloth(0xfbbf24, 'fabric'), cyl(0.025, 0.025, 2.7, 6), V(-1.4, 1.3, 0), [0, 0, -0.6]);
-  } else if(style === 'neon'){
+  } else if(style === 'neon_v16'){
     // v16: asa delta de néon (arestas emissivas pulsantes)
     const shp = new THREE.Shape(); shp.moveTo(0, 2.2); shp.lineTo(3.4, -1.2); shp.lineTo(0, -0.5); shp.lineTo(-3.4, -1.2); shp.closePath();
     const wg = new THREE.ShapeGeometry(shp); wg.rotateX(-Math.PI / 2 + 0.18);
