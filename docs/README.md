@@ -170,3 +170,16 @@ Retargeting: os clips são definidos em rotações locais normalizadas e aplicad
 - Pesca: cardumes no lago e no rio (E) com peixes de escudo, vida e voadores.
 - Missões diárias (3 por dia) e desafios de temporada com XP, rastreador no HUD e passe de batalha no lobby.
 - Lobby: cartões de passe, missões e novidades, pódios com anel luminoso e o Ônibus de Batalha detalhado.
+
+## Novidades v18
+- Mapa maior (raio 600) com 6 novos locais: Porto Pesqueiro, Templo Perdido, Moinhos Altos, Cratera Vulcânica (lava que causa dano), Base Científica e Acampamento Pinhal.
+- Relva na GPU em toda a ilha com custo constante; mais árvores, flores, arbustos e rochas.
+- Otimização: vegetação e rochas divididas em blocos espaciais (culling), adereços e partículas distantes desativados.
+- 10 picaretas novas: Dourada, Neon, Katana, Âncora, Taco, Osso, Viking, Relâmpago, Cogumelo e Espátula.
+- Skins base melhoradas: luvas, relógio, joelheiras, calças cargo, coldre, bonés, bandanas, faixas, emblemas e ténis.
+- Minimapa maior com o vulcão e mais plataformas de lançamento e tirolesas.
+
+## Correção v18.1 — multijogador com 3+ jogadores
+- Topologia em estrela: os convidados só precisam de ligação ao anfitrião, que reencaminha estado, eventos e chat para os restantes. Antes, cada convidado precisava de ligação direta a todos os outros e, quando uma falhava, só entravam 2.
+- Servidores STUN/TURN públicos para ligar jogadores em redes diferentes.
+- Versão de rede 2 (todos os jogadores precisam da versão nova).

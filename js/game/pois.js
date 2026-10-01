@@ -32,13 +32,23 @@ export const LOCATIONS = [
   { n: 'Torres Tortas', x: 215, z: 196, r: 72 },
   { n: 'Fábrica Ferrugem', x: 215, z: -205, r: 72 },
   { n: 'Pico Nevado', x: -245, z: -235, r: 95 },
-  { n: 'Deserto Seco', x: -300, z: 140, r: 130 }
+  { n: 'Deserto Seco', x: -300, z: 140, r: 130 },
+  // v18: anel exterior do mapa maior
+  { n: 'Porto Pesqueiro', x: 500, z: -30, r: 70 },
+  { n: 'Templo Perdido', x: 40, z: 480, r: 60 },
+  { n: 'Moinhos Altos', x: -480, z: -70, r: 60 },
+  { n: 'Cratera Vulcânica', x: 335, z: 335, r: 100 },
+  { n: 'Base Científica', x: 330, z: -400, r: 60 },
+  { n: 'Acampamento Pinhal', x: -330, z: 370, r: 55 }
 ];
 export function locationAt(x, z){ for(const L of LOCATIONS) if(Math.hypot(x - L.x, z - L.z) < L.r) return L; return null; }
 // zonas sem vegetação/objetos aleatórios (retângulos x0,z0,x1,z1)
-export const ZONES = [[167, 147, 263, 245], [165, -255, 272, -160], [-312, 80, -255, 150], [18, -384, 44, -356], [-262, -252, -228, -218]];
+// 5.º valor = 1 → zona sem calçada (só sem vegetação)
+export const ZONES = [[167, 147, 263, 245], [165, -255, 272, -160], [-312, 80, -255, 150], [18, -384, 44, -356, 1], [-262, -252, -228, -218, 1],
+  [455, -75, 560, 15], [8, 440, 72, 520, 1], [-515, -105, -445, -35, 1], [300, -432, 362, -368], [-352, 350, -306, 392, 1]];
 // estradas de terra (centro → locais)
-export const ROADS = [[0, -10, 215, 196], [0, -10, 215, -205], [0, -10, -285, 118], [0, -10, 30, -345], [-60, -40, -150, -168], [0, -10, -40, 200], [215, 196, 190, 90]];
+export const ROADS = [[0, -10, 215, 196], [0, -10, 215, -205], [0, -10, -285, 118], [0, -10, 30, -345], [-60, -40, -150, -168], [0, -10, -40, 200], [215, 196, 190, 90],
+  [190, 90, 330, 40], [330, 40, 470, -30], [-40, 200, 80, 330], [80, 330, 40, 445], [-220, 20, -330, -40], [-330, -40, -455, -70], [-285, 118, -330, 350], [215, -205, 330, -370], [215, 196, 272, 272]];
 
 // ---------------- helpers de geometria ----------------
 function norm(g, color){
@@ -198,6 +208,8 @@ export class PieceBank {
 // ============================================================
 export function planPOIs(FLATS){
   FLATS.push([215, 196, 62, 0], [215, -205, 62, 0], [-285, 115, 36, 0], [30, -370, 14, 1.0], [-131, -117.5, 5, 0.45], [-74, -117.5, 5, 0.45]);
+  // v18
+  FLATS.push([500, -30, 52, 0], [40, 480, 40, 0], [-480, -70, 42, 0], [330, -400, 40, 0], [-330, 370, 30, 0]);
 }
 
 export function buildPOIs(W, heightAt){
@@ -398,6 +410,160 @@ export function buildPOIs(W, heightAt){
     W.group.add(g); W._staticMerge.push(g);
     W.physics.addBox(V(x0, 0.1, zc - 4.3), V(x1, 0.7, zc + 4.3));
     W.physics.addBox(V(x0, 0, zc + 3.9), V(x1, 3.6, zc + 4.4)); W.physics.addBox(V(x0, 0, zc - 4.4), V(x1, 3.6, zc - 3.9));
+  }
+  // ============================================================
+  // v18: POIs do anel exterior (mapa maior)
+  // ============================================================
+  R.spinners = []; R.blinks = []; R.fires2 = [];
+  const SG = () => { const g = new THREE.Group(); const add = (geo, mat, x, y, z, rx, ry, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if(rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0); m.castShadow = m.receiveShadow = true; g.add(m); return m; }; return [g, add]; };
+  const stone = Mat.rock(0x8d8a78), stoneD = Mat.rock(0x6f6c5c), moss = Mat.cloth(0x4d7c2f, 'fabric'), plank = Mat.wood(0x8b5a2b), post = Mat.wood(0x5b3a24);
+  // ================= PORTO PESQUEIRO =================
+  {
+    const bank = new PieceBank(W, 'porto');
+    building(bank, { x0: 462, z0: -70, cw: 2, cd: 1, stories: 1, wallMat: mats.plasterB, matKey: 'pl', front: '+z', harvest: 'wood', hpW: 180 });
+    const B = building(bank, { x0: 462, z0: -6, cw: 1, cd: 2, stories: 2, wallMat: mats.woodW, matKey: 'wd', front: '+x', harvest: 'wood', hpW: 160 });
+    building(bank, { x0: 500, z0: -74, cw: 2, cd: 2, stories: 1, wallMat: mats.sheet, matKey: 'sh', front: '+x', bigDoor: true, blank: true, harvest: 'metal', hpW: 240 });
+    bank.type('crate', crateGeo(), mats.vcol, { hp: 90, harvest: 'wood' });
+    bank.type('barrel', barrelGeo(), mats.vcol, { hp: 60, harvest: 'metal', explode: { r: 13, dmg: 60 } });
+    bank.type('lamp', lampGeo(), mats.vcol, { hp: 120, harvest: 'metal' }); bank.type('lampH', lampHeadGeo(), mats.lampE, { collide: false, target: false, cast: false, noProbe: true });
+    [[512, -20], [516, -20], [514, -16], [540, 8], [545, -42], [530, -60]].forEach(([x, z], i) => bank.add('crate', x, i === 2 ? 4 : 0, z, i * 0.4));
+    [[535, -28], [538, -25], [520, 10]].forEach(([x, z]) => bank.add('barrel', x, 0, z, Math.random() * 6));
+    [[500, -30, 0], [530, -8, Math.PI], [530, -52, 0]].forEach(([x, z, r]) => { const l = bank.add('lamp', x, 0, z, r); bank.link(l, bank.add('lampH', x, 0, z, r)); });
+    bank.finalize(); R.porto = bank;
+    // cais de madeira (3 molhes) + estacas
+    const [g, add] = SG();
+    for(const zc of [-48, -18, 12]){
+      const x0 = 545, x1 = 628, deck = new THREE.BoxGeometry(x1 - x0, 0.5, 7);
+      add(deck, plank, (x0 + x1) / 2, 0.95, zc);
+      for(let x = x0; x <= x1; x += 2.2) add(new THREE.BoxGeometry(0.12, 0.52, 7.05), post, x, 0.96, zc);
+      for(let x = x0 + 4; x <= x1; x += 9) for(const sz of [-1, 1]) add(new THREE.CylinderGeometry(0.45, 0.5, 9, 8), post, x, -3.4, zc + sz * 3.1);
+      for(const sz of [-1, 1]) add(new THREE.BoxGeometry(x1 - x0, 0.3, 0.3), post, (x0 + x1) / 2, 2.6, zc + sz * 3.4);
+      W.physics.addBox(V(x0, 0.2, zc - 3.5), V(x1, 1.2, zc + 3.5));
+    }
+    // barcos atracados
+    const hullG = (() => { const sh = new THREE.Shape(); sh.moveTo(-3, -8); sh.lineTo(3, -8); sh.lineTo(3.2, 4); sh.quadraticCurveTo(2.6, 8, 0, 10); sh.quadraticCurveTo(-2.6, 8, -3.2, 4); sh.lineTo(-3, -8); const e = new THREE.ExtrudeGeometry(sh, { depth: 3, bevelEnabled: true, bevelThickness: 0.4, bevelSize: 0.4, bevelSegments: 2 }); e.rotateX(Math.PI / 2); e.translate(0, 3, 0); return e; })();
+    [[598, -33, 0xdc2626], [586, -3, 0x2563eb], [612, 27, 0xf8fafc]].forEach(([x, z, c], i) => {
+      const bg = new THREE.Group(); bg.position.set(x, -1.9, z); bg.rotation.y = Math.PI / 2 + (i - 1) * 0.08;
+      const h = new THREE.Mesh(hullG, Mat.paint(c)); h.castShadow = h.receiveShadow = true; bg.add(h);
+      const deckM = new THREE.Mesh(new THREE.BoxGeometry(6, 0.3, 17), plank); deckM.position.set(0, 3.1, 0.5); deckM.receiveShadow = true; bg.add(deckM);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.4, 4.5), Mat.paint(0xf1f5f9)); cab.position.set(0, 4.9, -3.5); cab.castShadow = true; bg.add(cab);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.1, 0.1), mats.glass); win.position.set(0, 5.6, -1.2); bg.add(win);
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 10, 8), post); mast.position.set(0, 8, 3); bg.add(mast);
+      g.add(bg);
+      W.physics.addBox(V(x - 8.5, 0.6, z - 3.2), V(x + 8.5, 1.3, z + 3.2));
+    });
+    // bancas de peixe (toldos às riscas)
+    for(const [x, z, c] of [[488, -30, 0x2563eb], [488, -42, 0xdc2626]]){
+      add(new THREE.BoxGeometry(6, 2.2, 3), plank, x, 1.1, z); add(new THREE.BoxGeometry(6.6, 0.25, 4), Mat.cloth(c, 'fabric'), x, 5.2, z, 0.18);
+      for(const sx of [-1, 1]) add(new THREE.CylinderGeometry(0.12, 0.12, 5, 6), post, x + sx * 3, 2.6, z + 1.6);
+      for(let k = 0; k < 4; k++) add(new THREE.SphereGeometry(0.5, 8, 6), Mat.paint(0x94a3b8), x - 2 + k * 1.3, 2.4, z, 0, 0, 0).scale.set(1.8, 0.6, 0.7);
+      W.physics.addBox(V(x - 3, 0, z - 1.5), V(x + 3, 2.2, z + 1.5));
+    }
+    W.group.add(g); W._staticMerge.push(g);
+    loot.chests.push([622, -18, Math.PI / 2, 1.2], [600, -33, 0, 1.4]); loot.floor.push([548, 1.3, 12], [610, 1.3, -48]); loot.ammo.push([520, -30], [560, -18]);
+    R.zips.push({ a: V(470, B.roofY + 9, 10), b: V(560, 10, -48) });
+  }
+  // ================= TEMPLO PERDIDO =================
+  {
+    const [g, add] = SG(); const cx = 40, cz = 492;
+    const tiers = [40, 30, 20, 10];
+    tiers.forEach((w, i) => {
+      add(new THREE.BoxGeometry(w, 5, w), i % 2 ? stoneD : stone, cx, i * 5 + 2.5, cz);
+      add(new THREE.BoxGeometry(w + 0.6, 0.6, w + 0.6), stoneD, cx, i * 5 + 5, cz);
+      W.physics.addBox(V(cx - w / 2, i * 5, cz - w / 2), V(cx + w / 2, i * 5 + 5, cz + w / 2));
+      for(let k = 0; k < 5; k++){ const a = k * 1.7 + i; add(new THREE.BoxGeometry(0.5 + (k % 2), 3 + (k % 3), 0.2), moss, cx + Math.cos(a) * w * 0.4, i * 5 + 3, cz - w / 2 - 0.12); }
+    });
+    // escadaria central (lado -z, virada para o centro da ilha): 20 degraus de 1 u
+    for(let i = 0; i < 20; i++){
+      const z0 = cz - 27 + i, h = i + 1;
+      add(new THREE.BoxGeometry(7, h, 1.02), i % 2 ? stone : stoneD, cx, h / 2, z0 + 0.5);
+      W.physics.addBox(V(cx - 3.5, 0, z0), V(cx + 3.5, h, z0 + 1));
+    }
+    for(const sx of [-1, 1]) for(let i = 0; i < 20; i += 4) add(new THREE.BoxGeometry(1, 1.2, 4), stoneD, cx + sx * 4, i + 1.6, cz - 27 + i + 2);
+    // santuário no topo: pilares + laje + gema brilhante
+    const top = 20;
+    for(const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]){ add(new THREE.BoxGeometry(1.4, 8, 1.4), stone, cx + sx * 4, top + 4, cz + sz * 4); W.physics.addBox(V(cx + sx * 4 - 0.7, top, cz + sz * 4 - 0.7), V(cx + sx * 4 + 0.7, top + 8, cz + sz * 4 + 0.7)); }
+    add(new THREE.BoxGeometry(11, 1.2, 11), stoneD, cx, top + 8.6, cz); W.physics.addBox(V(cx - 5.5, top + 8, cz - 5.5), V(cx + 5.5, top + 9.2, cz + 5.5));
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(1.1, 0), Mat.emissive(0x34d399, 3)); gem.position.set(cx, top + 11.2, cz); W.group.add(gem); R.spinners.push({ o: gem, ax: 'y', sp: 0.9, bob: top + 11.2 });
+    W.group.add(g); W._staticMerge.push(g);
+    // colunas partidas destrutíveis à volta
+    const bank = new PieceBank(W, 'templo');
+    const colG = (() => { const p = [C(1.1, 1.3, 9, 0, 4.5, 0, 0x8d8a78, 10), B(3, 0.8, 3, 0, 0.4, 0, 0x6f6c5c), B(2.8, 0.7, 2.8, 0, 9.3, 0, 0x6f6c5c)]; const g2 = merge(p); g2.computeBoundingSphere(); return { geo: g2, boxes: [[-1.4, 0, -1.4, 1.4, 9.6, 1.4]] }; })();
+    bank.type('col', colG, Mat.vcolor('templo', { roughness: 0.9 }), { hp: 220, harvest: 'stone' });
+    [[12, 455], [68, 455], [8, 480], [72, 480], [10, 510], [70, 512], [26, 448], [54, 448]].forEach(([x, z], i) => bank.add('col', x, 0, z, i * 0.5, { s: 0.8 + (i % 3) * 0.2 }));
+    bank.finalize(); R.templo = bank;
+    loot.chests.push([cx, cz, 0, top + 0.1], [cx - 14, cz - 24, 0, 0], [cx + 22, cz + 6, Math.PI / 2, 0]); loot.floor.push([cx + 10, 5.2, cz - 12], [cx - 8, 10.2, cz + 9]); loot.ammo.push([cx + 16, cz - 26]);
+  }
+  // ================= MOINHOS ALTOS =================
+  {
+    const bank = new PieceBank(W, 'moinhos');
+    building(bank, { x0: -500, z0: -62, cw: 2, cd: 2, stories: 1, wallMat: Mat.wood(0x9b2c2c), matKey: 'rb', front: '+x', bigDoor: true, harvest: 'wood', hpW: 170, stairs: false, roofHole: false });
+    const hayG = (() => { const g2 = merge([C(1.7, 1.7, 3.2, 0, 0, 0, 0xd9b44a, 16, 0, Math.PI / 2)]); g2.translate(0, 1.7, 0); g2.computeBoundingSphere(); return { geo: g2, boxes: [[-1.6, 0, -1.7, 1.6, 3.4, 1.7]] }; })();
+    bank.type('hay', hayG, Mat.vcolor('hay', { roughness: 1 }), { hp: 60, harvest: 'wood' });
+    [[-462, -58], [-462, -52], [-458, -55], [-470, -86], [-440, -70], [-505, -24], [-500, -20]].forEach(([x, z], i) => bank.add('hay', x, i === 2 ? 3.3 : 0, z, i * 0.9));
+    bank.finalize(); R.moinhos = bank;
+    const [g, add] = SG(); const white = Mat.plaster(0xf5f0e6), roofM = Mat.wood(0x5b2a1a), sail = Mat.cloth(0xf8fafc, 'fabric');
+    for(const [x, z, ry] of [[-455, -102, 0.4], [-512, -104, -0.3], [-448, -22, 0.9]]){
+      const y = heightAt(x, z);
+      add(new THREE.CylinderGeometry(3.0, 4.4, 26, 18), white, x, y + 13, z); add(new THREE.ConeGeometry(3.8, 6, 18), roofM, x, y + 29, z);
+      add(new THREE.BoxGeometry(2.2, 4, 0.4), post, x + Math.sin(ry + Math.PI) * 4.3, y + 2, z + Math.cos(ry + Math.PI) * 4.3, 0, ry);
+      W.physics.addCircle(x, z, 4.3, y + 32);
+      const hub = new THREE.Group(); hub.position.set(x + Math.sin(ry) * 3.8, y + 24, z + Math.cos(ry) * 3.8); hub.rotation.y = ry;
+      const rot = new THREE.Group(); hub.add(rot);
+      rot.add(new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.4, 12).rotateX(Math.PI / 2), post));
+      for(let k = 0; k < 4; k++){ const arm = new THREE.Group(); arm.rotation.z = k * Math.PI / 2; const a = new THREE.Mesh(new THREE.BoxGeometry(0.4, 13, 0.3), post); a.position.y = 6.8; const sl = new THREE.Mesh(new THREE.BoxGeometry(2.8, 10, 0.12), sail); sl.position.set(1.6, 7.6, 0.1); a.castShadow = sl.castShadow = true; arm.add(a, sl); rot.add(arm); }
+      W.group.add(hub); R.spinners.push({ o: rot, ax: 'z', sp: 0.55 + Math.random() * 0.2 });
+      loot.floor.push([x + 7, y + 0.4, z + 3]);
+    }
+    // cercas
+    for(let i = 0; i < 14; i++){ const x = -530 + i * 6; add(new THREE.BoxGeometry(0.4, 2.4, 0.4), post, x, 1.2, -128); add(new THREE.BoxGeometry(6, 0.3, 0.2), plank, x + 3, 1.8, -128); add(new THREE.BoxGeometry(6, 0.3, 0.2), plank, x + 3, 0.9, -128); }
+    W.group.add(g); W._staticMerge.push(g);
+    loot.chests.push([-455, -94, 0, heightAt(-455, -94)], [-512, -96, 0, heightAt(-512, -96)]); loot.ammo.push([-470, -40]);
+  }
+  // ================= BASE CIENTÍFICA =================
+  {
+    const bank = new PieceBank(W, 'base');
+    const A = building(bank, { x0: 306, z0: -426, cw: 3, cd: 2, stories: 2, wallMat: mats.conc, matKey: 'co', front: '+z', wide: true });
+    bank.type('cont', containerGeo(), mats.sheetW, { hp: 500, harvest: 'metal' });
+    [[300, -365, 0, 0xf8fafc], [300, -365, 0, 0x0e7490, 8.6], [364, -440, Math.PI / 2, 0xca8a04]].forEach(([x, z, r, c, y]) => bank.add('cont', x, y || 0, z, r, { color: c }));
+    bank.finalize(); R.base = bank;
+    const [g, add] = SG(); const domeM = new THREE.MeshPhysicalMaterial({ color: 0xe2e8f0, roughness: 0.25, metalness: 0.4, clearcoat: 0.8 });
+    for(const [x, z, r] of [[318, -378, 7.5], [348, -376, 6]]){ add(new THREE.SphereGeometry(r, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), domeM, x, 0, z); add(new THREE.CylinderGeometry(r + 0.2, r + 0.2, 0.6, 28), Mat.concrete(0x6b7280), x, 0.3, z); W.physics.addCircle(x, z, r * 0.92, r * 0.85); }
+    // torre de antena com luz a piscar
+    const tx = 366, tz = -408;
+    for(const sx of [-1, 1]) for(const sz of [-1, 1]) add(new THREE.BoxGeometry(0.35, 34, 0.35), Mat.metal(0x94a3b8, 0.4), tx + sx * 1.2, 17, tz + sz * 1.2);
+    for(let y = 3; y < 34; y += 4) add(new THREE.BoxGeometry(2.6, 0.2, 2.6), Mat.metal(0x94a3b8, 0.4), tx, y, tz);
+    W.physics.addCircle(tx, tz, 1.8, 34);
+    W.group.add(g); W._staticMerge.push(g);
+    const blink = new THREE.Mesh(new THREE.SphereGeometry(0.6, 10, 8), Mat.emissive(0xff2d2d, 4).clone()); blink.position.set(tx, 34.6, tz); W.group.add(blink); R.blinks.push(blink);
+    // radar no telhado (gira)
+    const radar = new THREE.Group(); radar.position.set(330, A.roofY, -410);
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(4, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.35), new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.4, metalness: 0.3, side: THREE.DoubleSide }));
+    dish.rotation.x = -Math.PI / 2 - 0.5; dish.position.y = 4; dish.castShadow = true;
+    const mastR = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 10), Mat.metal(0x64748b, 0.3)); mastR.position.y = 2;
+    radar.add(mastR, dish); W.group.add(radar); R.spinners.push({ o: radar, ax: 'y', sp: 0.6 });
+    loot.chests.push([318, -372, 0, 0.4]); loot.ammo.push([340, -386], [296, -410]);
+    R.zips.push({ a: V(tx - 3, 31, tz), b: V(300, heightAt(300, -330) + 9, -330) });
+  }
+  // ================= ACAMPAMENTO PINHAL =================
+  {
+    const bank = new PieceBank(W, 'acamp');
+    const cab = (cx, cz, ry) => {
+      const y = heightAt(cx, cz) - 0.2;
+      bank.type('w_cb_plain', wallGeo('plain'), mats.woodW, { hp: 150, harvest: 'wood' }); bank.type('w_cb_door', wallGeo('door'), mats.woodW, { hp: 150, harvest: 'wood' }); bank.type('w_cb_window', wallGeo('window'), mats.woodW, { hp: 150, harvest: 'wood' }); bank.type('fl_cb', floorGeo(), mats.woodW, { hp: 200, harvest: 'wood' });
+      bank.add(ry ? 'w_cb_window' : 'w_cb_door', cx, y, cz + 8, 0); bank.add(ry ? 'w_cb_door' : 'w_cb_window', cx, y, cz - 8, 0); bank.add('w_cb_window', cx - 8, y, cz, Math.PI / 2); bank.add('w_cb_plain', cx + 8, y, cz, Math.PI / 2); bank.add('fl_cb', cx, y, cz, 0);
+      return y;
+    };
+    const y1 = cab(-344, 356, 0), y2 = cab(-314, 384, 1);
+    bank.finalize(); R.acamp = bank;
+    const [g, add] = SG(); const roofM = Mat.wood(0x4a2f1c);
+    for(const [cx, cz, y] of [[-344, 356, y1], [-314, 384, y2]]){ [-1, 1].forEach(sd => add(new THREE.BoxGeometry(18.4, 0.6, 11), roofM, cx, y + 16, cz + sd * 4.4, sd * 0.6)); W.physics.addBox(V(cx - 8.5, y + WALL_H, cz - 8.5), V(cx + 8.5, y + WALL_H + 0.5, cz + 8.5)); loot.chests.push([cx - 3, cz - 3, 0, y + 0.4]); }
+    const tentG = (() => { const sh = new THREE.Shape(); sh.moveTo(-3, 0); sh.lineTo(3, 0); sh.lineTo(0, 4.2); sh.lineTo(-3, 0); const e = new THREE.ExtrudeGeometry(sh, { depth: 6, bevelEnabled: false }); e.translate(0, 0, -3); return e; })();
+    [[-318, 356, 0xea580c, 0.3], [-342, 386, 0x16a34a, -0.5], [-352, 372, 0x2563eb, 1.3], [-322, 368, 0xfacc15, 2.2]].forEach(([x, z, c, r]) => { const y = heightAt(x, z); add(tentG, Mat.cloth(c, 'fabric'), x, y, z, 0, r); W.physics.addCircle(x, z, 2.6, y + 3.5); });
+    for(let i = 0; i < 4; i++){ const a = i / 4 * Math.PI * 2 + 0.4, x = -331 + Math.cos(a) * 5, z = 370 + Math.sin(a) * 5; add(new THREE.CylinderGeometry(0.5, 0.5, 3.2, 8), post, x, heightAt(x, z) + 0.5, z, 0, -a, Math.PI / 2); }
+    W.group.add(g); W._staticMerge.push(g);
+    R.fires2.push([-331, 370]);
+    loot.floor.push([-328, heightAt(-328, 362) + 0.4, 362]); loot.ammo.push([-336, 378]);
   }
   // ---- munições espalhadas / loot extra no chão ----
   loot.ammo.push([200, 190], [236, 198], [210, -196], [245, -230], [34, -362], [-240, -228], [-100, -110], [60, 20], [-80, 60], [140, -100], [-40, 180], [180, 80]);

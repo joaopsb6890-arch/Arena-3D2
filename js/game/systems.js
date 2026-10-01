@@ -42,7 +42,8 @@ export class MatchSystems {
   }
   // ---------------- plataformas de lançamento ----------------
   _pads(){
-    const W = this.world, spots = [[150, 20], [-170, 140], [40, 250], [-250, -150], [260, -60], [-20, -260], [100, 150], [-120, -10]];
+    const W = this.world, spots = [[150, 20], [-170, 140], [40, 250], [-250, -150], [260, -60], [-20, -260], [100, 150], [-120, -10],
+      [420, 110], [-420, 210], [200, 430], [-230, -470], [460, -250], [-10, -500], [262, 262], [-440, -200]];   // v18: anel exterior + sopé do vulcão
     const baseMat = Mat.metal(0x334155, 0.35), glow = Mat.emissive(0x22d3ee, 2.2), arrow = Mat.emissive(0xfde047, 2.0);
     for(const [x0, z0] of spots){
       let x = x0, z = z0; for(let k = 0; k < 12 && !W._freeSpot(x, z, 4); k++){ x += 9; z -= 7; }

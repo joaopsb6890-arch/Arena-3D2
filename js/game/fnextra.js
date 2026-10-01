@@ -7,6 +7,7 @@
 //   · Missões com XP durante a partida (ligadas ao painel DESAFIOS do lobby)
 // ============================================================
 import * as THREE from 'three';
+import { lavaAt } from './world.js';
 import { Mat } from '../engine/materials.js';
 import { bushGeo } from './pois.js';
 
@@ -171,6 +172,14 @@ export class FortExtras {
   // ---------------- update ----------------
   update(dt){
     const m = this.m;
+    // v18: lava da cratera — queima e faz saltar (como no Fortnite)
+    for(const a of m.actors){
+      if(!a.alive || a.mode !== 'ground') continue;
+      const p = a.body.pos, lv = lavaAt(p.x, p.z);
+      if(lv === null || p.y > lv + 1.6) continue;
+      a.body.vel.y = 30; a.body.grounded = false; p.y = lv + 1.7;
+      if(m.time - (a._lavaT || -9) > 0.45){ a._lavaT = m.time; a.takeDamage(9, null, false); m.particles.emit('fire', p.clone().setY(p.y + 1), { n: 10 }); if(a.isPlayer){ m.audio.play('hurt', null, { vol: 0.6 }); m.toast('Lava! Sai da cratera'); } }
+    }
     for(let i = this.smokes.length - 1; i >= 0; i--){
       const s = this.smokes[i]; s.t -= dt; const age = s.life - s.t;
       const k = Math.min(1, age / 1.2) * Math.min(1, s.t / 2);

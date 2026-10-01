@@ -210,6 +210,7 @@ export class ParticleSystem {
       if(e.enabled === false) continue;
       e.acc += dt * e.rate;
       const pos = e.target ? e.target.getWorldPosition(e._wp || (e._wp = new THREE.Vector3())).add(e.offset || _zero) : e.pos;
+      if(this.camPos && !e.target && e.pos && Math.hypot(e.pos.x - this.camPos.x, e.pos.z - this.camPos.z) > 170){ e.acc = 0; continue; }
       while(e.acc >= 1){ e.acc -= 1; this.emit(e.type, pos, e.opt); }
     }
     for(const L of this.lights){ if(L.t > 0){ L.t -= dt; L.light.intensity = Math.max(0, L.t / L.dur) * L.i; } else L.light.intensity = 0; }

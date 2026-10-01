@@ -24,7 +24,18 @@ export const PICKAXES = {
   tridente:{ name: 'Tridente dos Mares', rarity: 'epico', trail: 0x67e8f9, spark: 0xa5f3fc, pitch: 1.1 },
   chave:   { name: 'Chave Inglesa',   rarity: 'incomum', trail: 0xcbd5e1, spark: 0xfde68a, pitch: 0.85 },
   guitarra:{ name: 'Guitarra-Machado', rarity: 'lendario', trail: 0xe879f9, spark: 0xf5d0fe, pitch: 1.3 },
-  pirulito:{ name: 'Pirulito Gigante', rarity: 'raro', trail: 0xfde047, spark: 0xfbcfe8, pitch: 1.4 }
+  pirulito:{ name: 'Pirulito Gigante', rarity: 'raro', trail: 0xfde047, spark: 0xfbcfe8, pitch: 1.4 },
+  // v18
+  katana:  { name: 'Katana Carmesim', rarity: 'lendario', trail: 0xf87171, spark: 0xfecaca, pitch: 1.45 },
+  ancora:  { name: 'Âncora do Capitão', rarity: 'epico', trail: 0x94a3b8, spark: 0xe2e8f0, pitch: 0.7 },
+  taco:    { name: 'Taco Estelar', rarity: 'raro', trail: 0xfde047, spark: 0xfef08a, pitch: 1.0 },
+  osso:    { name: 'Osso de Dino', rarity: 'incomum', trail: 0xf5efe0, spark: 0xfde68a, pitch: 0.8 },
+  viking:  { name: 'Machado Nórdico', rarity: 'epico', trail: 0x38bdf8, spark: 0xbae6fd, pitch: 0.85 },
+  relampago:{ name: 'Raio Elétrico', rarity: 'lendario', trail: 0xfde047, spark: 0xfef9c3, pitch: 1.6 },
+  cogumelo:{ name: 'Cogumelo Mágico', rarity: 'raro', trail: 0xf87171, spark: 0xffffff, pitch: 1.3 },
+  espatula:{ name: 'Espátula do Chef', rarity: 'incomum', trail: 0xe5e7eb, spark: 0xfde68a, pitch: 1.15 },
+  dourada: { name: 'Picareta Dourada', rarity: 'lendario', trail: 0xfde047, spark: 0xfff1a8, pitch: 1.05 },
+  neon:    { name: 'Picareta Néon', rarity: 'epico', trail: 0xff3ea5, spark: 0x67e8f9, pitch: 1.2 }
 };
 export const GLIDERS = {
   classico: { name: 'Planador Clássico', rarity: 'comum' },
@@ -78,7 +89,7 @@ export const CATS = {
   emote: { label: 'Emote', list: () => SHOP_EMOTES }
 };
 // os 12 trajes originais continuam liberados; os 6 novos trajes são da loja
-export const DEFAULT_OWNED = ['skin:default', 'skin:red', 'skin:green', 'skin:purple', 'skin:gold', 'skin:shadow', 'skin:ice', 'skin:fire', 'skin:pink', 'skin:forest', 'skin:ocean', 'skin:royal', 'pickaxe:padrao', 'glider:classico', 'contrail:nenhum', 'contrail:nuvem'];
+export const DEFAULT_OWNED = ['skin:default', 'skin:red', 'skin:green', 'skin:purple', 'skin:gold', 'skin:shadow', 'skin:ice', 'skin:fire', 'skin:pink', 'skin:forest', 'skin:ocean', 'skin:royal', 'pickaxe:padrao', 'pickaxe:osso', 'pickaxe:espatula', 'glider:classico', 'contrail:nenhum', 'contrail:nuvem'];
 
 export function itemInfo(id){
   const [cat, key] = id.split(':');

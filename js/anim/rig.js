@@ -624,6 +624,78 @@ export function createCharacter(skinKey, opts){
   if(springs.length === 0){ /* sem spring */ }
   if(backpack) springs.push(new SpringChain([backpack], V(0, -0.6, -0.1), { stiffness: 22, drag: 0.45, gravity: 4, wind: 0.02 }));
 
+  // ------------ v18: detalhes extra (sobretudo para os trajes base) ------------
+  const EX = (k) => S.extras.includes(k);
+  const mDark = Mat.polymer(0x1f2328), mAcc2 = Mat.cloth(S.accent, 'fabric'), mTop2c = Mat.cloth(S.top2, 'fabric');
+  if(EX('gloves')){
+    for(const sd of ['L', 'R']){
+      add(J['hand' + sd], box(0.34, 0.24, 0.19, 0.06), mGlove, V(0, -0.13, 0), null, null, { fine: true });
+      add(J['fArm' + sd], torus(0.165 * B, 0.045, 8, 20), mAcc2, V(0, -P.fArm + 0.06, 0), [Math.PI / 2, 0, 0], null, { fine: true });
+    }
+  }
+  if(EX('watch')){
+    add(J.fArmL, torus(0.155 * B, 0.04, 8, 20), mDark, V(0, -P.fArm + 0.22, 0), [Math.PI / 2, 0, 0], null, { fine: true });
+    add(J.fArmL, cyl(0.075, 0.075, 0.05, 14), Mat.emissive(S.accent, 1.2), V(0.15 * B, -P.fArm + 0.22, 0), [0, 0, Math.PI / 2], null, { fine: true });
+  }
+  if(EX('kneepads')){
+    for(const sd of ['L', 'R']){
+      add(J['shin' + sd], box(0.36, 0.36, 0.14, 0.06), mDark, V(0, -0.1, 0.22), [0.12, 0, 0], null, { fine: true });
+      add(J['shin' + sd], torus(0.25 * B, 0.03, 6, 20), mDark, V(0, -0.16, 0.02), [Math.PI / 2, 0, 0], null, { fine: true });
+    }
+  }
+  if(EX('cargo')){
+    const mPk = Mat.cloth(new THREE.Color(S.pant).multiplyScalar(0.78).getHex(), 'denim');
+    for(const sd of ['L', 'R']){ const sx = sd === 'L' ? 1 : -1;
+      add(J['thigh' + sd], box(0.14, 0.44, 0.36, 0.05), mPk, V(sx * 0.3 * B, -P.thigh * 0.5, 0.02), null, null, { fine: true });
+      add(J['thigh' + sd], box(0.16, 0.1, 0.38, 0.03), mPk, V(sx * 0.31 * B, -P.thigh * 0.5 + 0.24, 0.02), null, null, { fine: true });
+    }
+  }
+  if(EX('holster')){
+    add(J.thighR, box(0.16, 0.5, 0.3, 0.05), mBelt, V(-0.33 * B, -P.thigh * 0.3, 0.02), null, null, { fine: true });
+    add(J.thighR, box(0.12, 0.28, 0.14, 0.03), mDark, V(-0.36 * B, -P.thigh * 0.3 + 0.3, 0.02), [0, 0, -0.15], null, { fine: true });
+    add(J.thighR, torus(0.37 * B, 0.03, 6, 20), mBelt, V(0, -P.thigh * 0.38, 0), [Math.PI / 2, 0, 0], null, { fine: true });
+  }
+  if(EX('straps')){
+    for(const zf of [1, -1]) add(J.chest, box(0.16, cH * 1.28, 0.06, 0.02), mBelt, V(0, cH * 0.5, zf * 0.56 * B), [-0.08 * zf, 0, 0.62 * zf], null, { fine: true });
+    for(let i = 0; i < 3; i++) add(J.chest, box(0.14, 0.18, 0.1, 0.03), mDark, V(-0.3 + i * 0.26, cH * (0.3 + i * 0.17), 0.6 * B), [-0.1, 0, 0.62], null, { fine: true });
+  }
+  if(EX('emblem')){
+    add(J.chest, cyl(0.15, 0.15, 0.03, 20), mAcc2, V(0.32, cH * 0.66, 0.565 * B), [Math.PI / 2 - 0.15, 0, 0], null, { fine: true });
+    add(J.chest, box(0.1, 0.1, 0.02), Mat.emissive(0xffffff, 0.6), V(0.32, cH * 0.66, 0.585 * B), [-0.15, 0, Math.PI / 4], null, { fine: true });
+  }
+  if(EX('bandana')){
+    const bd = new THREE.ConeGeometry(0.42, 0.55, 3); bd.rotateX(Math.PI); bd.scale(1, 1, 0.35);
+    add(J.chest, bd, mAcc2, V(0, cH * 0.8, 0.47 * B), [-0.12, 0, 0], null, { fine: true });
+    add(J.chest, torus(0.31, 0.07, 8, 24), mAcc2, V(0, cH * 0.95, 0.02), [Math.PI / 2, 0, 0], null, { fine: true });
+  }
+  if(EX('tiedjacket')){
+    add(J.hips, torus(0.66 * B, 0.1, 8, 36), mAcc2, V(0, 0.08, 0), [Math.PI / 2, 0, 0], V(1, 0.74, 1));
+    add(J.hips, box(0.2, 0.7, 0.1, 0.05), mAcc2, V(0.12, -0.28, 0.5 * B), [0.1, 0, 0.12], null, { fine: true });
+    add(J.hips, box(0.2, 0.62, 0.1, 0.05), mAcc2, V(-0.14, -0.26, 0.5 * B), [0.1, 0, -0.18], null, { fine: true });
+    add(J.hips, box(1.0 * B, 0.9, 0.08, 0.04), mAcc2, V(0, -0.32, -0.48 * B), [-0.12, 0, 0]);
+  }
+  if(EX('sneakers')){
+    const white = Mat.polymer(0xf8fafc);
+    for(const sd of ['L', 'R']){
+      const f = J['foot' + sd], toe = J['toe' + sd];
+      add(f, box(0.47, 0.13, 0.83, 0.04), white, V(0, -P.ankle + 0.035, 0.17));
+      add(toe, box(0.45, 0.13, 0.37, 0.04), white, V(0, -0.02, 0.06));
+      for(const sx of [1, -1]) add(f, box(0.02, 0.1, 0.42), mAccent, V(sx * 0.205, -P.ankle + 0.2, 0.12), [0.25, 0, 0], null, { fine: true });
+      for(let i = 0; i < 3; i++) add(f, box(0.24, 0.025, 0.04), white, V(0, -P.ankle + 0.33 - i * 0.02, 0.28 + i * 0.1), [0.35, 0, 0], null, { fine: true });
+    }
+  }
+  if(EX('cap')){
+    const capM = Mat.cloth(S.capColor || S.accent, 'fabric');
+    add(J.head, new THREE.SphereGeometry(R * 1.14, 30, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), capM, hc.clone().add(V(0, R * 0.14, -R * 0.04)), [-0.22, 0, 0], V(1, 0.96, 1.03));
+    add(J.head, torus(R * 1.13, R * 0.06, 6, 32), mTop2c, hc.clone().add(V(0, R * 0.2, -R * 0.04)), [Math.PI / 2 - 0.22, 0, 0], null, { fine: true });
+    const bz = S.capBack ? -1 : 1;
+    add(J.head, box(R * 1.15, R * 0.08, R * 0.8, 0.03), capM, hc.clone().add(V(0, bz > 0 ? R * 0.5 : R * 0.1, bz * R * 1.32)), [bz * 0.18, 0, 0]);
+    add(J.head, sphere(R * 0.1, 10, 8), mTop2c, hc.clone().add(V(0, R * 1.2, -R * 0.28)), null, null, { fine: true });
+  }
+  if(EX('headband')){
+    add(J.head, torus(R * 0.99, R * 0.09, 8, 32), mAcc2, hc.clone().add(V(0, R * 0.45, -R * 0.02)), [Math.PI / 2 - 0.12, 0, 0], V(0.96, 1.02, 1));
+    for(const sd of [1, -1]) add(J.head, box(R * 0.16, R * 0.6, R * 0.05, 0.02), mAcc2, hc.clone().add(V(sd * R * 0.14, R * 0.1, -R * 1.02)), [0.3, 0, sd * 0.25], null, { fine: true });
+  }
   // ------------ build ------------
   if(opts.batch === false) pb.build(fine, meshes); else pb.buildSkinned(root, fine, meshes);
 

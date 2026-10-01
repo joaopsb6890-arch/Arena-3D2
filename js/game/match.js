@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { PhysicsWorld } from './physics.js';
-import { World, heightAt, GRID, WALL_H, MAP_R, DESERT } from './world.js';
+import { World, heightAt, GRID, WALL_H, MAP_R, DESERT, VOLCANO } from './world.js';
 import { LOCATIONS, ROADS, ZONES } from './pois.js';
 import { Actor } from './actor.js';
 import { BotBrain } from './ai.js';
@@ -918,7 +918,7 @@ export class Match {
     el.innerHTML = '<h6>MISSÕES</h6>' + Q.daily().map(q => { const p = Q.prog(q), d = Q.isDone(q); return `<div class="qt ${d ? 'done' : ''}"><span>${q.t}</span><b>${d ? '✓' : p + '/' + q.n}</b><i style="width:${Math.round(p / q.n * 100)}%"></i></div>`; }).join('');
   }
   _minimapBase(){
-    const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const S = 640, cv = document.createElement('canvas'); cv.width = cv.height = S;
     const ctx = cv.getContext('2d'), sc = S / (MAP_R * 2.2), w = this.world;
     const tx = (x) => S / 2 - x * sc, tz = (z) => S / 2 - z * sc;
     const img = ctx.createImageData(S, S), d = img.data;
@@ -931,6 +931,7 @@ export class Match {
         if(wa !== null && h < wa) c = [42, 111, 143];
         else if(r > MAP_R - 38) c = [214, 194, 143];
         else if(!w.empty && Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r) c = [222, 196, 140];
+        else if(!w.empty && Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < VOLCANO.r){ const vd = Math.hypot(x - VOLCANO.x, z - VOLCANO.z); c = vd < VOLCANO.cr ? [255, 110, 30] : vd < VOLCANO.cr + 10 ? [60, 52, 48] : [96, 88, 80]; }
         else if(h > 34) c = [236, 240, 244];
         else { const g = Math.max(0, Math.min(1, h / 40)); c = [106 - g * 30, 154 - g * 40, 69 - g * 10]; }
         const sh = (heightAt(x + 3, z + 3) - h) * 6; c = c.map(v => Math.max(0, Math.min(255, v - sh)));

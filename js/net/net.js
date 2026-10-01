@@ -13,9 +13,13 @@
 import { joinRoom, selfId } from 'trystero/nostr';
 
 export const NET_APP = 'arena3d-p2p-v14';
-export const NET_VERSION = 1;
+export const NET_VERSION = 2;   // v19: estrela + reencaminhamento pelo anfitrião
 export { selfId };
-const CFG = { appId: NET_APP };
+// v19: STUN + TURN públicos → ligações entre redes diferentes (NAT) funcionam com 3+ jogadores
+const CFG = { appId: NET_APP, rtcConfig: { iceServers: [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
+] } };
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const genCode = () => Array.from({ length: 5 }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]).join('');
 export const NET_MODES = ['tdm', 'br', 'zb', 'blitz', 'gun', 'duel'];
@@ -69,14 +73,45 @@ export class NetSession {
     this.aHello = mk('hello'); this.aRoster = mk('roster'); this.aChat = mk('chat'); this.aStart = mk('start'); this.aState = mk('st'); this.aEv = mk('ev');
     this.aHello.onMessage = (d, { peerId }) => this._onHello(d, peerId);
     this.aRoster.onMessage = (d, { peerId }) => this._onRoster(d, peerId);
-    this.aChat.onMessage = (d, { peerId }) => { const p = this.roster.get(peerId); this._pushChat({ from: p ? p.name : '?', text: String(d.text || '').slice(0, 140) }); };
+    // v19: topologia em estrela — os convidados só falam com o anfitrião, que reencaminha para os outros.
+    //  Antes cada convidado precisava de uma ligação WebRTC direta com TODOS os outros (malha completa);
+    //  quando uma dessas ligações falhava (NAT/rede), o 3.º jogador não via/ouvia o 2.º → só entravam 2.
+    this.aChat.onMessage = this._relayed(this.aChat, (d, from) => { const p = this.roster.get(from); this._pushChat({ from: p ? p.name : '?', text: String(d.text || '').slice(0, 140) }); });
     this.aStart.onMessage = (d, { peerId }) => { if(peerId === this.hostId) this._onStart(d); };
-    this.aState.onMessage = (d, { peerId }) => { this.stats.down++; if(this.match) this.match.netState(d, peerId); };
-    this.aEv.onMessage = (d, { peerId }) => { this.stats.down++; if(this.match) this.match.netEvent(d, peerId); };
+    this.aState.onMessage = this._relayed(this.aState, (d, from) => { this.stats.down++; if(this.match) this.match.netState(d, from); });
+    this.aEv.onMessage = this._relayed(this.aEv, (d, from) => { this.stats.down++; if(this.match) this.match.netEvent(d, from); });
     this.room.onPeerJoin = (p) => { this.aHello.send(this._helloData(), { target: p }).catch(() => {}); if(this.isHost) this._broadcastRoster(p); };
     this.room.onPeerLeave = (p) => this._onLeave(p);
     this._pingT = setInterval(() => this._ping(), 3000);
     if(this.isHost) this._advertise();
+  }
+  /** recebe mensagens com envelope de reencaminhamento ({_r: origem} / {_to: destino}) */
+  _relayed(action, deliver){
+    return (d, { peerId }) => {
+      if(!d) return;
+      if(this.isHost){
+        if(!this.roster.has(peerId)) return;
+        if(d._to){                                   // mensagem dirigida a outro convidado
+          if(d._to === selfId) deliver(d.d, peerId);
+          else if(this.roster.has(d._to)) action.send({ _r: peerId, d: d.d }, { target: d._to }).catch(() => {});
+          return;
+        }
+        deliver(d, peerId);
+        const others = this._guests().filter(id => id !== peerId);
+        if(others.length) action.send({ _r: peerId, d }, { target: others }).catch(() => {});
+        return;
+      }
+      // convidado: só aceita o que vem do anfitrião (evita duplicados se houver ligação direta)
+      if(this.hostId && peerId !== this.hostId) return;
+      if(d._r){ if(d._r !== selfId) deliver(d.d, d._r); } else deliver(d, peerId);
+    };
+  }
+  _guests(){ const peers = this.room.getPeers(); return this.order.filter(id => id !== selfId && peers[id]); }
+  /** envia: anfitrião → todos (ou alvo); convidado → só ao anfitrião (com _to se for para outro) */
+  _send(action, d, target){
+    if(this.isHost || !this.hostId){ return action.send(d, target ? { target } : undefined).catch(() => {}); }
+    if(target && target !== this.hostId) return action.send({ _to: target, d }, { target: this.hostId }).catch(() => {});
+    return action.send(d, { target: this.hostId }).catch(() => {});
   }
   _helloData(){ return { v: NET_VERSION, profile: this.me, host: this.isHost }; }
   _onHello(d, peer){
@@ -101,7 +136,10 @@ export class NetSession {
     if(d.full){ this._close('A sala está cheia'); return; }
     this.hostId = peer;
     this.settings = Object.assign(this.settings, d.settings);
-    this.roster = new Map(d.roster.map(p => [p.id, p])); this.order = d.roster.map(p => p.id);
+    const prev = this.roster, next = new Map(d.roster.map(p => [p.id, p]));
+    for(const [id, p] of prev) if(id !== selfId && !next.has(id)){ if(this.match) this.match.netPeerLeft(id); if(prev.size > 1) this._pushChat({ sys: true, text: `${p.name} saiu` }); }
+    for(const [id, p] of next) if(id !== selfId && !prev.has(id) && prev.size > 1) this._pushChat({ sys: true, text: `${p.name} entrou na sala` });
+    this.roster = next; this.order = d.roster.map(p => p.id);
     if(!this.roster.has(selfId)){ this.roster.set(selfId, Object.assign({ id: selfId }, this.me)); this.order.push(selfId); }
     this.inGame = d.inGame;
     this._changed();
@@ -109,13 +147,14 @@ export class NetSession {
   _onLeave(peer){
     const p = this.roster.get(peer);
     if(peer === this.hostId){ this._close('O anfitrião saiu da sala'); return; }
+    if(!this.isHost) return;      // v19: no convidado, quem saiu é decidido pelo anfitrião (lista de jogadores)
     if(this.match) this.match.netPeerLeft(peer);
     if(p){ this.roster.delete(peer); this.order = this.order.filter(x => x !== peer); this._pushChat({ sys: true, text: `${p.name} saiu` }); }
     if(this.isHost){ this._broadcastRoster(); this._advertise(); }
     this._changed();
   }
   _pushChat(m){ this.chat.push(m); if(this.chat.length > 60) this.chat.shift(); if(this.onChat) this.onChat(m); }
-  say(text){ text = String(text || '').trim().slice(0, 140); if(!text) return; this.aChat.send({ text }).catch(() => {}); this._pushChat({ from: this.me.name, text, me: true }); }
+  say(text){ text = String(text || '').trim().slice(0, 140); if(!text) return; this._send(this.aChat, { text }); this._pushChat({ from: this.me.name, text, me: true }); }
   setSettings(s){ if(!this.isHost) return; Object.assign(this.settings, s); this._broadcastRoster(); this._advertise(); }
   _advertise(){
     const lob = this.app.publicLobby;
@@ -144,8 +183,8 @@ export class NetSession {
   }
   _onStart(d){ this.inGame = true; this.startInfo = d; if(this.onStart) this.onStart(d); }
   endGame(){ if(this.isHost){ this.inGame = false; this._broadcastRoster(); this._advertise(); } }
-  sendState(d){ this.stats.up++; this.aState.send(d).catch(() => {}); }
-  ev(d, target){ this.stats.up++; this.aEv.send(d, target ? { target } : undefined).catch(() => {}); }
+  sendState(d){ this.stats.up++; this._send(this.aState, d); }
+  ev(d, target){ this.stats.up++; this._send(this.aEv, d, target); }
   peerCount(){ return Object.keys(this.room.getPeers()).length; }
   _close(reason){ const cb = this.onClosed; this.leave(); if(cb) cb(reason); }
   leave(){

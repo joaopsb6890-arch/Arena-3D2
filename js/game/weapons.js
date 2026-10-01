@@ -198,14 +198,17 @@ export function createPickaxe(style){
   style = style || 'padrao';
   const g = new THREE.Group(); g.name = 'pickaxe'; g.userData.style = style;
   const b = new WB();
-  const wood = Mat.wood(0x6b3a17), leather = Mat.leather(0x1a1410), gold = Mat.metal(0xd4a02a, 0.2), head = Mat.metal(0x3b4250, 0.35), edge = Mat.metal(0xdfe6ee, 0.12);
+  let wood = Mat.wood(0x6b3a17), leather = Mat.leather(0x1a1410), gold = Mat.metal(0xd4a02a, 0.2), head = Mat.metal(0x3b4250, 0.35), edge = Mat.metal(0xdfe6ee, 0.12);
   // cabo comum (origem = ponto de pega; +Y ao longo do cabo; +Z = frente do golpe)
   const handle = (mat, len, r) => { b.add(mat, cyl(r || 0.055, (r || 0.055) * 1.15, len, 14), V(0, len / 2 - 0.5, 0)); };
   const grip = (mat) => { b.add(mat, cyl(0.075, 0.075, 0.55, 14), V(0, 0.0, 0)); for(let i = 0; i < 5; i++) b.add(mat, new THREE.TorusGeometry(0.075, 0.012, 6, 16), V(0, -0.22 + i * 0.11, 0), [Math.PI / 2, 0, 0.2]); };
   let tip = V(0, 1.3, 1.2), glowMat = null;
-  if(style === 'padrao'){
-    const glow = Mat.emissive(0x22d3ee, 1.4);
-    handle(wood, 2.2); grip(leather);
+  if(style === 'padrao' || style === 'dourada' || style === 'neon'){
+    // v18: variantes da picareta clássica (Dourada, Néon)
+    let glow = Mat.emissive(0x22d3ee, 1.4), hw = wood, gl = leather;
+    if(style === 'dourada'){ const g2 = Mat.metal(0xf5c542, 0.12); glow = Mat.emissive(0xfff1a8, 2.2); hw = Mat.metal(0x7c4a12, 0.3); gl = Mat.leather(0x3f1d0b); gold = g2; head = Mat.metal(0xe0a82e, 0.15); edge = Mat.metal(0xfff7d6, 0.05); glowMat = glow; }
+    if(style === 'neon'){ glow = Mat.emissive(0xff3ea5, 3.0); hw = Mat.polymer(0x111827); gl = Mat.polymer(0x1f2937); gold = Mat.emissive(0x22d3ee, 2.2); head = Mat.polymer(0x0b0f19); edge = Mat.emissive(0xff3ea5, 2.6); glowMat = glow; }
+    handle(hw, 2.2); grip(gl);
     b.add(gold, cyl(0.085, 0.085, 0.08, 14), V(0, -0.5, 0)).add(gold, new THREE.SphereGeometry(0.09, 12, 8), V(0, -0.56, 0)).add(gold, cyl(0.09, 0.09, 0.1, 14), V(0, 1.55, 0));
     b.add(head, box(0.26, 0.3, 0.42, 0.05), V(0, 1.72, 0));
     for(let i = 0; i < 6; i++){ const t = i / 5; const z = 0.2 + t * 0.85, y = 1.72 - t * t * 0.38, sc = 1 - t * 0.75; b.add(i < 5 ? head : edge, box(0.2 * sc + 0.03, 0.2 * sc + 0.03, 0.2), V(0, y, z), [0.5 * t, 0, 0]); }
@@ -305,6 +308,66 @@ export function createPickaxe(style){
     b.add(swirlA, cyl(0.64, 0.64, 0.22, 28), V(0, 1.95, 0), [0, 0, Math.PI / 2]);
     b.add(Mat.glass(0xffffff), cyl(0.68, 0.68, 0.24, 28), V(0, 1.95, 0), [0, 0, Math.PI / 2]);
     tip = V(0, 1.95, 0.7);
+  } else if(style === 'katana'){
+    // v18: katana — lâmina curva extrudida, tsuba, cabo entrançado
+    const steel = Mat.metal(0xe5e7eb, 0.08), dark = Mat.polymer(0x111827), red = Mat.cloth(0xb91c1c, 'fabric'); glowMat = Mat.emissive(0xf87171, 2.4);
+    b.add(dark, cyl(0.06, 0.065, 1.0, 12), V(0, 0.0, 0));
+    for(let i = 0; i < 7; i++) b.add(red, box(0.14, 0.05, 0.14, 0.02), V(0, -0.4 + i * 0.13, 0), [0, i * 0.8, 0.5]);
+    b.add(Mat.metal(0xd4a02a, 0.2), cyl(0.2, 0.2, 0.05, 20), V(0, 0.55, 0));
+    const bl = new THREE.Shape(); bl.moveTo(-0.06, 0); bl.lineTo(0.06, 0); bl.quadraticCurveTo(0.14, 1.4, 0.02, 2.5); bl.lineTo(-0.02, 2.2); bl.quadraticCurveTo(0.02, 1.2, -0.06, 0);
+    const bg = new THREE.ExtrudeGeometry(bl, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.012, bevelSegments: 1, curveSegments: 16 }); bg.translate(0, 0, -0.015); bg.rotateY(Math.PI / 2);
+    b.add(steel, bg, V(0, 0.58, 0)).add(glowMat, box(0.012, 1.7, 0.02), V(0, 1.5, -0.05));
+    tip = V(0, 2.9, 0.1);
+  } else if(style === 'ancora'){
+    const iron = Mat.metal(0x475569, 0.35), rope = Mat.cloth(0xd6b77a, 'fabric');
+    b.add(iron, cyl(0.08, 0.09, 2.3, 12), V(0, 0.7, 0)); grip(rope);
+    b.add(iron, box(0.9, 0.14, 0.14, 0.04), V(0, 1.55, 0));
+    b.add(iron, new THREE.TorusGeometry(0.2, 0.05, 8, 18), V(0, -0.62, 0));
+    b.add(iron, new THREE.TorusGeometry(0.62, 0.075, 8, 24, Math.PI), V(0, 1.9, 0), [0, Math.PI / 2, Math.PI]);
+    for(const sz of [-1, 1]) b.add(Mat.metal(0x94a3b8, 0.2), new THREE.ConeGeometry(0.16, 0.42, 4), V(0, 1.98, sz * 0.62), [sz * -0.6, 0, 0]);
+    tip = V(0, 1.95, 0.7);
+  } else if(style === 'taco'){
+    const bat = Mat.wood(0xd9b27c); glowMat = Mat.emissive(0xfde047, 2.2);
+    b.add(bat, cyl(0.19, 0.06, 2.2, 18), V(0, 0.95, 0)).add(bat, new THREE.SphereGeometry(0.19, 16, 10), V(0, 2.05, 0), null, V(1, 0.4, 1)); grip(Mat.polymer(0x1d4ed8));
+    b.add(Mat.polymer(0x1d4ed8), cyl(0.09, 0.09, 0.06, 14), V(0, -0.3, 0));
+    for(let i = 0; i < 4; i++){ const st = new THREE.OctahedronGeometry(0.06, 0); b.add(glowMat, st, V(Math.sin(i * 1.6) * 0.14, 1.2 + i * 0.22, Math.cos(i * 1.6) * 0.14)); }
+    tip = V(0, 2.1, 0.15);
+  } else if(style === 'osso'){
+    const bone = Mat.polymer(0xf5efe0);
+    b.add(bone, cyl(0.1, 0.12, 2.1, 12), V(0, 0.8, 0)); grip(Mat.leather(0x78350f));
+    for(const sx of [-1, 1]){ b.add(bone, new THREE.SphereGeometry(0.2, 14, 10), V(sx * 0.13, 1.95, 0)); b.add(bone, new THREE.SphereGeometry(0.16, 12, 8), V(sx * 0.1, -0.35, 0)); }
+    tip = V(0, 2.05, 0.1);
+  } else if(style === 'viking'){
+    const steel = Mat.metal(0x9ca3af, 0.2); glowMat = Mat.emissive(0x38bdf8, 2.4);
+    handle(Mat.wood(0x4a2f1c), 2.3, 0.06); grip(Mat.leather(0x292524));
+    const blade = new THREE.Shape(); blade.moveTo(0, -0.22); blade.quadraticCurveTo(0.4, -0.5, 0.62, -0.58); blade.quadraticCurveTo(0.78, 0, 0.62, 0.58); blade.quadraticCurveTo(0.4, 0.5, 0, 0.22); blade.lineTo(0, -0.22);
+    for(const sd of [1, -1]){
+      const bg = new THREE.ExtrudeGeometry(blade, { depth: 0.06, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 1, curveSegments: 12 });
+      bg.translate(0, 0, -0.03); bg.rotateY(sd > 0 ? -Math.PI / 2 : Math.PI / 2);
+      b.add(steel, bg, V(0, 1.62, sd * 0.06)).add(glowMat, box(0.07, 0.07, 0.07), V(0, 1.62, sd * 0.35), [0.78, 0, 0.78]);
+    }
+    b.add(Mat.metal(0x374151, 0.3), box(0.2, 0.46, 0.22, 0.04), V(0, 1.62, 0));
+    tip = V(0, 1.62, 0.7);
+  } else if(style === 'relampago'){
+    glowMat = Mat.emissive(0xfde047, 3.0);
+    handle(Mat.metal(0x1e293b, 0.3), 1.6, 0.06); grip(Mat.leather(0x0f172a));
+    const zz = new THREE.Shape(); zz.moveTo(0, 0); zz.lineTo(0.28, 0.55); zz.lineTo(0.08, 0.55); zz.lineTo(0.38, 1.2); zz.lineTo(-0.05, 0.6); zz.lineTo(0.14, 0.6); zz.lineTo(-0.12, 0.05); zz.lineTo(0, 0);
+    const zg = new THREE.ExtrudeGeometry(zz, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 1 }); zg.translate(0, 0, -0.05); zg.rotateY(-Math.PI / 2); zg.scale(1, 1.25, 1.25);
+    b.add(glowMat, zg, V(0, 1.05, 0)).add(Mat.metal(0xe5e7eb, 0.1), cyl(0.1, 0.1, 0.12, 12), V(0, 1.06, 0));
+    tip = V(0, 2.4, 0.45);
+  } else if(style === 'cogumelo'){
+    handle(Mat.polymer(0xf5f0e1), 2.0, 0.08); grip(Mat.leather(0x7c2d12));
+    b.add(Mat.paint(0xdc2626), new THREE.SphereGeometry(0.62, 22, 12, 0, Math.PI * 2, 0, Math.PI / 2), V(0, 1.55, 0), null, V(1, 0.75, 1));
+    b.add(Mat.polymer(0xf5f0e1), cyl(0.6, 0.5, 0.08, 22), V(0, 1.55, 0));
+    for(let i = 0; i < 7; i++){ const a = i * 2.3, r = i ? 0.38 : 0; b.add(Mat.polymer(0xffffff), new THREE.SphereGeometry(0.09, 8, 6), V(Math.cos(a) * r, 1.55 + (i ? 0.3 : 0.47), Math.sin(a) * r), null, V(1, 0.5, 1)); }
+    tip = V(0, 1.7, 0.6);
+  } else if(style === 'espatula'){
+    const steel = Mat.metal(0xd1d5db, 0.15);
+    handle(Mat.polymer(0x111827), 1.7, 0.07); grip(Mat.polymer(0xef4444));
+    b.add(steel, box(0.05, 0.5, 0.08), V(0, 1.4, 0.05), [0.35, 0, 0]);
+    b.add(steel, box(0.04, 0.72, 0.62, 0.03), V(0, 1.92, 0.22), [0.35, 0, 0]);
+    for(let i = 0; i < 3; i++) b.add(Mat.polymer(0x0f172a), box(0.05, 0.45, 0.06), V(0, 1.95, 0.08 + i * 0.16), [0.35, 0, 0]);
+    tip = V(0, 2.2, 0.45);
   }
   b.build(g);
   g.userData.tip = marker(g, 'tip', tip);

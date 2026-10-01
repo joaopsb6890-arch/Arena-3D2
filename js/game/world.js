@@ -12,7 +12,7 @@ import { Wind } from '../anim/secondary.js';
 import { planPOIs, buildPOIs, ZONES, ROADS, LOCATIONS, palmGeo, cactusGeo, bushGeo, flowerGeo } from './pois.js';
 import { createWeapon, RARITY, GUNS, rollRarity } from './weapons.js';
 
-export const MAP_R = 420;
+export const MAP_R = 600;   // v18: ilha maior (era 420 → ~2× a área)
 export const GRID = 16, WALL_H = 13;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -21,6 +21,18 @@ export const MOUNTAIN = { x: -245, z: -235, r: 118, h: 80 };
 export const DESERT = { x: -300, z: 140, r: 130 };
 export const RIVER = [[-172, -152], [-120, -135], [-85, -100], [-68, -66]];
 export const WATER_Y = -1.4;
+// v18: Cratera Vulcânica (cone com cratera e lago de lava) no nordeste
+export const VOLCANO = { x: 335, z: 335, r: 100, h: 60, cr: 21 };
+export const LAVA_Y = 37.5;
+export function lavaAt(x, z){ return Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < VOLCANO.cr - 1 ? LAVA_Y : null; }
+function volcanoH(x, z){
+  const vx = x - VOLCANO.x, vz = z - VOLCANO.z, vd = Math.sqrt(vx * vx + vz * vz);
+  if(vd >= VOLCANO.r) return 0;
+  const u = 1 - vd / VOLCANO.r, e = u * u * (3 - 2 * u);
+  let h = VOLCANO.h * Math.pow(e, 1.15) + Math.sin(Math.atan2(vz, vx) * 9 + vd * 0.08) * u * (1 - u) * 9;
+  if(vd < VOLCANO.cr + 9){ const k = THREE.MathUtils.smoothstep(vd, VOLCANO.cr - 5, VOLCANO.cr + 9); h = h * k + (LAVA_Y - 2.5) * (1 - k); }
+  return h;
+}
 function riverDist(x, z){
   if(x < -190 || x > -50 || z < -170 || z > -48) return 1e9;
   let best = 1e9;
@@ -46,6 +58,8 @@ export function heightAt(x, z){
   // dunas
   const dx = x - DESERT.x, dz = z - DESERT.z, dd2 = dx * dx + dz * dz;
   if(dd2 < DESERT.r * DESERT.r){ const w = 1 - Math.sqrt(dd2) / DESERT.r; h += (Math.sin(x / 19 + z / 31) * 2.2 + Math.sin(x / 7.3 - z / 11) * 0.5) * Math.min(1, w * 2.5); }
+  // v18: vulcão
+  h += volcanoH(x, z);
   // achata pontos de interesse
   for(const f of FLATS){ const dd = Math.hypot(x - f[0], z - f[1]); if(dd < f[2] + 18){ const k = THREE.MathUtils.smoothstep(dd, f[2], f[2] + 18); h = h * k + f[3] * (1 - k); } }
   // leito do rio (depois dos achatamentos, para a água atravessar tudo)
@@ -97,6 +111,23 @@ function windify(mat, amount, key, grad){
   return mat;
 }
 const HIDDEN = new THREE.MeshBasicMaterial({ visible: false });
+// v18: divide um InstancedMesh em blocos espaciais (células de 'cell' u) → o frustum culling (câmara e sombra)
+// passa a descartar blocos inteiros fora de vista em vez de desenhar a ilha toda em cada passe.
+function chunkify(im, cell){
+  const n = im.count, m = new THREE.Matrix4(), c = new THREE.Color(), groups = new Map(), map = new Array(n);
+  for(let i = 0; i < n; i++){ im.getMatrixAt(i, m); const key = Math.floor(m.elements[12] / cell) + ',' + Math.floor(m.elements[14] / cell); if(!groups.has(key)) groups.set(key, []); groups.get(key).push(i); }
+  const meshes = [];
+  for(const ids of groups.values()){
+    const cm = new THREE.InstancedMesh(im.geometry, im.material, ids.length);
+    ids.forEach((id, j) => { im.getMatrixAt(id, m); cm.setMatrixAt(j, m); if(im.instanceColor){ im.getColorAt(id, c); cm.setColorAt(j, c); } map[id] = { m: cm, i: j }; });
+    cm.castShadow = im.castShadow; cm.receiveShadow = im.receiveShadow; Object.assign(cm.userData, im.userData);
+    cm.instanceMatrix.needsUpdate = true; if(cm.instanceColor) cm.instanceColor.needsUpdate = true; cm.computeBoundingSphere();
+    meshes.push(cm);
+  }
+  im.dispose && im.dispose();
+  return { meshes, map };
+}
+const CELL = 300;
 function mergeVerticesSafe(g){ const c = g.clone(); c.deleteAttribute('uv'); c.deleteAttribute('normal'); return mergeVertices(c, 1e-4); }
 export const WIND_U = { uTime: { value: 0 }, uWind: { value: new THREE.Vector3() } };
 
@@ -126,6 +157,7 @@ export class World {
       this.poi.loot.chests.forEach(([x, z, r, y]) => this.addChest(x, z, r, y));
       this.poi.loot.floor.forEach(([x, y, z]) => { const t = Math.random(); if(t < 0.62) this.spawnPickup(GUNS[Math.floor(Math.random() * GUNS.length)], V(x, 0, z), 1, { y: y + 1.5, rar: rollRarity() }); else this.spawnPickup(['potion', 'medkit', 'ammo', 'grenade'][Math.floor(Math.random() * 4)], V(x, 0, z), t < 0.8 ? 1 : 2, { y: y + 1.5 }); });
       this._river();
+      this._volcano();
       this._trees(); this._rocks(); this._props();
     }
     if(this.empty || opts.editable) this._emptyInstances();
@@ -137,7 +169,7 @@ export class World {
   // ---------- terreno ----------
   _planHouses(){
     this.housePlan = [];
-    const spots = [[60, 40], [-90, 70], [120, -110], [-140, -80], [20, -170], [190, 90], [-40, 200], [-220, 20]];
+    const spots = [[60, 40], [-90, 70], [120, -110], [-140, -80], [20, -170], [190, 90], [-40, 200], [-220, 20], [330, 40], [-330, -40], [80, 330], [-150, 385], [420, -200], [-200, -430]];   // v18: +6 casas no anel exterior
     spots.forEach(([x, z], i) => {
       const w = i % 3 === 0 ? 3 : 2, d = 2;
       this.housePlan.push({ x, z, w, d, rot: 0 });
@@ -146,12 +178,12 @@ export class World {
     FLATS.push([-60, -40, 26, -2.2]); // lago
   }
   _ground(){
-    const seg = this.q === 'baixa' ? 150 : this.q === 'media' ? 220 : 280;
+    const seg = this.q === 'baixa' ? 200 : this.q === 'media' ? 270 : 330;   // v18: mapa maior → mais segmentos (≈4.4 u por quadrado em Alta)
     const g = new THREE.PlaneGeometry(MAP_R * 2.4, MAP_R * 2.4, seg, seg); g.rotateX(-Math.PI / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3), spl = new Float32Array(pos.count * 4);
     const SS = THREE.MathUtils.smoothstep, addW = (i, ch, w) => { spl[i * 4 + ch] = Math.max(spl[i * 4 + ch], w); };
     const cA = new THREE.Color(0x5f8f3e), cB = new THREE.Color(0x7aa04a), cDirt = new THREE.Color(0x8a7550), cSand = new THREE.Color(0xcdb98a);
-    const cDes = new THREE.Color(0xe0c48c), cSnow = new THREE.Color(0xf1f5f9), cBed = new THREE.Color(0x7c6f55), cRoad = new THREE.Color(0x9a8260), cPave = new THREE.Color(0x6b6f76);
+    const cBas = new THREE.Color(0x3a3431), cAsh = new THREE.Color(0x5b534d), cDes = new THREE.Color(0xe0c48c), cSnow = new THREE.Color(0xf1f5f9), cBed = new THREE.Color(0x7c6f55), cRoad = new THREE.Color(0x9a8260), cPave = new THREE.Color(0x6b6f76);
     for(let i = 0; i < pos.count; i++){
       const x = pos.getX(i), z = pos.getZ(i), h = heightAt(x, z); pos.setY(i, h);
       const n = Math.sin(x * 0.05) * Math.cos(z * 0.043) * 0.5 + 0.5;
@@ -163,10 +195,12 @@ export class World {
       if(!this.empty){
         // v16: biomas
         const dD = Math.hypot(x - DESERT.x, z - DESERT.z); if(dD < DESERT.r + 20){ const w = SS(DESERT.r + 20 - dD, 0, 35); c.lerp(cDes, w); addW(i, 0, w); }
-        if(h > 34){ const w = SS(h, 34, 46); c.lerp(cSnow, w); addW(i, 2, w); }
+        const vD = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
+        if(vD < VOLCANO.r + 14){ const w = SS(VOLCANO.r + 14 - vD, 0, 45); c.lerp(vD < VOLCANO.cr + 12 ? cBas : cAsh, w * 0.9); addW(i, 1, w * 0.75); }
+        else if(h > 34){ const w = SS(h, 34, 46); c.lerp(cSnow, w); addW(i, 2, w); }
         const rd = riverDist(x, z); if(rd < 16){ const w = SS(16 - rd, 0, 5) * 0.85; c.lerp(rd < 9 ? cBed : cSand, w); addW(i, rd < 9 ? 3 : 0, w); }
         for(const r of ROADS){ const dx = r[2] - r[0], dz = r[3] - r[1], t = Math.max(0, Math.min(1, ((x - r[0]) * dx + (z - r[1]) * dz) / (dx * dx + dz * dz))); const dr = Math.hypot(x - r[0] - dx * t, z - r[1] - dz * t); if(dr < 6){ c.lerp(cRoad, (1 - dr / 6) * 0.7); addW(i, 3, Math.min(1, (1 - dr / 6) * 1.3)); } }
-        for(const Z of ZONES){ if(x > Z[0] - 4 && x < Z[2] + 4 && z > Z[1] - 4 && z < Z[3] + 4 && Z !== ZONES[3] && Z !== ZONES[4]){ c.lerp(cPave, 0.8); addW(i, 1, 0.9); } }
+        for(const Z of ZONES){ if(x > Z[0] - 4 && x < Z[2] + 4 && z > Z[1] - 4 && z < Z[3] + 4 && !Z[4]){ c.lerp(cPave, 0.8); addW(i, 1, 0.9); } }
       }
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
@@ -440,7 +474,7 @@ export class World {
   }
   _trees(){
     const G = this.treeG = this._treeGeos();
-    const count = this.q === 'baixa' ? 90 : this.q === 'media' ? 140 : 200;
+    const count = this.q === 'baixa' ? 180 : this.q === 'media' ? 280 : 400;   // v18: mapa ~2× maior
     const trunkM = Mat.wood(0x6b4a2f), leafM = windify(new THREE.MeshStandardMaterial({ color: 0x4f8a35, roughness: 0.85, flatShading: false }), 0.06, 'leaf');
     const pineM = windify(new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }), 0.05, 'pine');
     const half = Math.ceil(count / 2);
@@ -450,7 +484,10 @@ export class World {
     let a = 0, b = 0;
     for(let i = 0; i < count; i++){
       let x, z, ok = false, tries = 0;
-      while(!ok && tries++ < 40){ const ang = rnd() * Math.PI * 2, d = 30 + Math.sqrt(rnd()) * (MAP_R - 60); x = Math.cos(ang) * d; z = Math.sin(ang) * d; ok = this._freeSpot(x, z, 14); }
+      while(!ok && tries++ < 40){ const ang = rnd() * Math.PI * 2, d = 30 + Math.sqrt(rnd()) * (MAP_R - 60); x = Math.cos(ang) * d; z = Math.sin(ang) * d;
+        // v18: bosques densos — selva à volta do Templo (árvores redondas) e pinhal no Acampamento (pinheiros)
+        const bias = rnd(); if(bias < 0.1 && i < half){ const a2 = rnd() * 6.28, d2 = 22 + Math.sqrt(rnd()) * 60; x = 40 + Math.cos(a2) * d2; z = 480 + Math.sin(a2) * d2; } else if(bias < 0.1){ const a2 = rnd() * 6.28, d2 = 26 + Math.sqrt(rnd()) * 55; x = -330 + Math.cos(a2) * d2; z = 370 + Math.sin(a2) * d2; }
+        ok = this._freeSpot(x, z, 14) && Math.hypot(x - VOLCANO.x, z - VOLCANO.z) > VOLCANO.r * 0.8; }
       if(!ok) continue;
       const pineType0 = i >= half, y0 = heightAt(x, z);
       if(Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r - 10 || y0 > 60 || (!pineType0 && y0 > 30)) continue;
@@ -464,12 +501,22 @@ export class World {
       this.trees.push(tree);
     }
     iT.count = iL.count = a; iPT.count = iP.count = b;
-    [iT, iL, iPT, iP].forEach(im => { im.castShadow = true; im.receiveShadow = true; im.instanceMatrix.needsUpdate = true; if(im.instanceColor) im.instanceColor.needsUpdate = true; this.group.add(im); this.raycastTargets.push(im); });
-    this.treeMeshes = { iT, iL, iPT, iP };
     iT.userData.treeKind = 'round'; iL.userData.treeKind = 'round'; iPT.userData.treeKind = 'pine'; iP.userData.treeKind = 'pine';
+    // v18: blocos espaciais (culling por bloco) — cada árvore guarda as suas instâncias (tronco + copa)
+    const round = this.trees.filter(t => !t.pine), pines = this.trees.filter(t => t.pine);
+    for(const [im, list] of [[iT, round], [iL, round], [iPT, pines], [iP, pines]]){
+      im.castShadow = true; im.receiveShadow = true;
+      // troncos (poucos triângulos) ficam num só draw call; copas/pinheiros (pesados) vão em blocos
+      const whole = im === iT || im === iPT;
+      const { meshes, map } = whole ? { meshes: [im], map: Array.from({ length: im.count }, (_, i) => ({ m: im, i })) } : chunkify(im, CELL), byIdx = new Map(list.map(t => [t.idx, t]));
+      if(whole){ im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); }
+      for(const cm of meshes){ cm.userData.map = []; this.group.add(cm); this.raycastTargets.push(cm); }
+      map.forEach((e, idx) => { const t = byIdx.get(idx); if(!t) return; (t.parts || (t.parts = [])).push(e); e.m.userData.map[e.i] = t; });
+    }
+    this.treeMeshes = null;
   }
   _rocks(){
-    const count = this.q === 'baixa' ? 40 : 70;
+    const count = this.q === 'baixa' ? 80 : 140;
     const { geo, rockMat } = this._rockGeo();
     const im = new THREE.InstancedMesh(geo, rockMat, count);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
@@ -483,12 +530,16 @@ export class World {
       this.rocks.push({ x, z, y, sc, hp: 180, alive: true, idx: k, matrix: m.clone(), collider: this.physics.addCircle(x, z, 2.2 * sc, y + 2 * sc) });
       k++;
     }
-    im.count = k; im.castShadow = true; im.receiveShadow = true; this.group.add(im); this.raycastTargets.push(im); this.rockMesh = im;
+    im.count = k; im.castShadow = true; im.receiveShadow = true;
+    const { meshes, map } = chunkify(im, CELL), byIdx = new Map(this.rocks.map(r => [r.idx, r]));
+    for(const cm of meshes){ cm.userData.map = []; cm.userData.rock = true; this.group.add(cm); this.raycastTargets.push(cm); }
+    map.forEach((e, idx) => { const r = byIdx.get(idx); if(!r) return; r.parts = [e]; e.m.userData.map[e.i] = r; });
+    this.rockMesh = null;
   }
   _rockGeo(){
     if(this.rockG) return this.rockG;
     // v13: rocha com ruído fractal (4 oitavas) + faces "lascadas" + musgo no topo (vertex color)
-    let geo = new THREE.IcosahedronGeometry(2.2, this.q === 'baixa' ? 3 : 4);
+    let geo = new THREE.IcosahedronGeometry(2.2, this.q === 'baixa' ? 2 : 3);   // v18: menos triângulos (o ruído fractal mantém a forma)
     geo = mergeVerticesSafe(geo);
     const gp = geo.attributes.position, col = new Float32Array(gp.count * 3), cR = new THREE.Color(0x9aa1a9), cD = new THREE.Color(0x6b7178), cM = new THREE.Color(0x5d7f3a), tmp = new THREE.Color();
     for(let i = 0; i < gp.count; i++){
@@ -575,26 +626,79 @@ export class World {
     }
     return true;
   }
+  // v18: relva "infinita" na GPU — um ladrilho de instâncias que acompanha a câmara (mod no vertex shader),
+  // altura e máscara lidas de um mapa de altura (DataTexture). Custo constante, relva em toda a ilha.
   _grass(){
-    const n = { baixa: 6000, media: 14000, alta: 26000, ultra: 40000 }[this.q] || 20000;
-    const blade = new THREE.PlaneGeometry(0.35, 1.6, 1, 4); blade.translate(0, 0.8, 0);
+    const n = { baixa: 5000, media: 10000, alta: 17000, ultra: 26000 }[this.q] || 15000;
+    const T = this.q === 'baixa' ? 130 : this.q === 'ultra' ? 190 : 165;
+    const blade = new THREE.PlaneGeometry(0.35, 1.6, 1, this.q === 'baixa' ? 2 : 4); blade.translate(0, 0.8, 0);
     const bp = blade.attributes.position; for(let i = 0; i < bp.count; i++){ const y = bp.getY(i); bp.setX(i, bp.getX(i) * (1 - y / 1.7)); bp.setZ(i, y * y * 0.06); }
     const cross = mergeGeometries([blade, blade.clone().rotateY(Math.PI / 2), blade.clone().rotateY(Math.PI / 4)]);
     cross.computeVertexNormals();
+    // mapa de altura + máscara (R = altura, G = pode ter relva)
+    const N = this.q === 'baixa' ? 256 : 384, SZ = MAP_R * 2.2, O = -SZ / 2, st = SZ / N;
+    const data = new Uint16Array(N * N * 4), toH = THREE.DataUtils.toHalfFloat;
+    for(let j = 0; j < N; j++) for(let i = 0; i < N; i++){
+      const x = O + (i + 0.5) * st, z = O + (j + 0.5) * st, h = heightAt(x, z), d = Math.hypot(x, z);
+      let ok = d < MAP_R - 34 && h > -0.6 && this._freeSpot(x, z, 1);
+      if(ok && !this.empty) ok = Math.hypot(x - DESERT.x, z - DESERT.z) > DESERT.r - 6 && h < 32 && Math.hypot(x - VOLCANO.x, z - VOLCANO.z) > VOLCANO.r * 0.78 && !(Math.abs(x - 500) < 60 && Math.abs(z + 30) < 50);
+      const k = (j * N + i) * 4; data[k] = toH(h - 0.05); data[k + 1] = toH(ok ? 1 : 0); data[k + 2] = 0; data[k + 3] = toH(1);
+    }
+    const hm = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.HalfFloatType);
+    hm.magFilter = hm.minFilter = THREE.LinearFilter; hm.wrapS = hm.wrapT = THREE.ClampToEdgeWrapping; hm.needsUpdate = true;
     const mat = windify(new THREE.MeshStandardMaterial({ color: 0x6d9c3f, roughness: 0.9, side: THREE.DoubleSide }), 0.55, 'grass', [0.5, 1.2, 0.9]);
+    const U = this.grassU = { uCam: { value: new THREE.Vector3() }, uHM: { value: hm }, uHMp: { value: new THREE.Vector4(O, O, SZ, T) } };
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (sh) => {
+      prev(sh); Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec3 uCam; uniform sampler2D uHM; uniform vec4 uHMp;')
+        .replace('#include <project_vertex>', `
+          #ifdef USE_INSTANCING
+          {
+            vec3 o = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]); float TT = uHMp.w;
+            vec2 wp = mod(o.xz - uCam.xz + 0.5 * TT, TT) - 0.5 * TT + uCam.xz;
+            vec4 hmv = texture2D(uHM, (wp - uHMp.xy) / uHMp.z);
+            float fade = 1.0 - smoothstep(TT * 0.3, TT * 0.5, length(wp - uCam.xz));
+            float keep = step(0.5, hmv.g) * fade;
+            mat3 RS = mat3(instanceMatrix);
+            transformed = transformed * keep + inverse(RS) * vec3(wp.x - o.x, hmv.r - o.y, wp.y - o.z);
+          }
+          #endif
+          #include <project_vertex>`);
+    };
+    mat.customProgramCacheKey = () => 'grass_v18';
     const im = new THREE.InstancedMesh(cross, mat, n);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
-    let k = 0;
     for(let i = 0; i < n; i++){
-      const ang = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 300, x = Math.cos(ang) * d, z = Math.sin(ang) * d;
-      if(!this._freeSpot(x, z, 1)) continue;
-      if(!this.empty && (Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r || heightAt(x, z) > 32)) continue;
-      const sc = rr(0.7, 1.5);
-      p.set(x, heightAt(x, z) - 0.05, z); q.setFromEuler(new THREE.Euler(0, rnd() * 6.28, 0)); s.set(sc, sc * rr(0.8, 1.3), sc); m.compose(p, q, s);
-      im.setMatrixAt(k, m); c.setHSL(0.24 + rr(-0.03, 0.04), 0.5, 0.3 + rr(-0.05, 0.08)); im.setColorAt(k, c); k++;
+      const x = (rnd() - 0.5) * T, z = (rnd() - 0.5) * T, sc = rr(0.7, 1.5);
+      p.set(x, 0, z); q.setFromEuler(new THREE.Euler(0, rnd() * 6.28, 0)); s.set(sc, sc * rr(0.8, 1.3), sc); m.compose(p, q, s);
+      im.setMatrixAt(i, m); c.setHSL(0.24 + rr(-0.03, 0.04), 0.5, 0.3 + rr(-0.05, 0.08)); im.setColorAt(i, c);
     }
-    im.count = k; im.receiveShadow = true; im.castShadow = false; im.userData.noProbe = true;
+    im.frustumCulled = false; im.receiveShadow = true; im.castShadow = false; im.userData.noProbe = true;
     this.group.add(im); this.grass = im;
+  }
+  // v18: lago de lava na cratera (shader animado, emissivo → bloom) + fumo e brasas
+  _volcano(){
+    const V0 = VOLCANO, U = this.lavaU = { value: 0 };
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uT = U;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vLW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLW = position.xy;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uT; varying vec2 vLW;\nfloat hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\nfloat nz(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hh(i), hh(i + vec2(1, 0)), f.x), mix(hh(i + vec2(0, 1)), hh(i + vec2(1, 1)), f.x), f.y); }')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          vec2 q = vLW * 0.22; float n = nz(q + vec2(uT * 0.15, uT * 0.08)) * 0.6 + nz(q * 2.3 - vec2(uT * 0.2, 0.0)) * 0.3 + nz(q * 5.0 + uT * 0.3) * 0.1;
+          float crust = smoothstep(0.52, 0.62, n);
+          vec3 hot = mix(vec3(3.2, 1.1, 0.12), vec3(4.0, 2.4, 0.5), smoothstep(0.2, 0.45, n));
+          diffuseColor.rgb = mix(hot, vec3(0.09, 0.05, 0.04), crust);`);
+    };
+    mat.customProgramCacheKey = () => 'lava_v18';
+    const lava = new THREE.Mesh(new THREE.CircleGeometry(V0.cr + 4, 48), mat);
+    lava.rotation.x = -Math.PI / 2; lava.position.set(V0.x, LAVA_Y, V0.z); lava.userData.noProbe = true; this.group.add(lava); this.lava = lava;
+    this.particles.addEmitter({ type: 'dust', rate: 5, pos: V(V0.x, LAVA_Y + 6, V0.z), opt: { color: 0x3f3a36, n: 1, power: 2.6 } });
+    this.particles.addEmitter({ type: 'fire', rate: 8, pos: V(V0.x + 6, LAVA_Y + 0.5, V0.z - 4), opt: { size: 2.2 } });
+    this.particles.addEmitter({ type: 'fire', rate: 6, pos: V(V0.x - 7, LAVA_Y + 0.5, V0.z + 5), opt: { size: 1.8 } });
+    // baús na borda da cratera
+    for(const a of [0.6, 2.8, 4.6]){ const x = V0.x + Math.cos(a) * (V0.cr + 14), z = V0.z + Math.sin(a) * (V0.cr + 14); this.addChest(x, z, -a, heightAt(x, z)); }
   }
   // v16: fita de água do Rio Serpente (mesmo material do lago)
   _river(){
@@ -620,26 +724,32 @@ export class World {
       const im = new THREE.InstancedMesh(geo, mat, list.length);
       list.forEach((o, i) => { P.set(o.x, o.y, o.z); Q.setFromEuler(E.set(0, o.r, 0)); S.setScalar(o.s); M4.compose(P, Q, S); im.setMatrixAt(i, M4); });
       im.castShadow = !!opts.cast; im.receiveShadow = true; if(opts.noProbe) im.userData.noProbe = true;
-      this.group.add(im); if(opts.target) this.raycastTargets.push(im); return im;
+      const { meshes, map } = opts.chunk ? chunkify(im, CELL) : { meshes: [im], map: list.map((_, i) => ({ m: im, i })) };
+      if(!opts.chunk){ im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); }
+      list.forEach((o, i) => { o._im = map[i].m; o._idx = map[i].i; });
+      for(const cm of meshes){ this.group.add(cm); if(opts.target) this.raycastTargets.push(cm); }
+      return meshes;
     };
     const vmat = Mat.vcolor('veg', { roughness: 0.85, metalness: 0 });
     const pick = (n, fn, r) => { const out = []; for(let i = 0; i < n * 4 && out.length < n; i++){ const p = fn(); if(p && this._freeSpot(p[0], p[1], r || 3)) out.push({ x: p[0], z: p[1], y: heightAt(p[0], p[1]), r: rnd() * 6.28, s: rr(0.8, 1.25) }); } return out; };
     const inDesert = (x, z) => Math.hypot(x - DESERT.x, z - DESERT.z) < DESERT.r - 8;
+    const jungle = () => { const a = rnd() * 6.28, d = Math.sqrt(rnd()) * 75; return [40 + Math.cos(a) * d, 480 + Math.sin(a) * d]; };
     const ring = (r0, r1) => () => { const a = rnd() * Math.PI * 2, d = r0 + Math.sqrt(rnd()) * (r1 - r0); return [Math.cos(a) * d, Math.sin(a) * d]; };
     // arbustos: bloqueiam a visão (entram no raycast da IA? não — só visual), sem colisão, como no Fortnite
-    const bushes = pick(q === 'baixa' ? 60 : 130, () => { const p = ring(30, MAP_R - 50)(); return inDesert(p[0], p[1]) || heightAt(p[0], p[1]) > 32 ? null : p; }, 2);
-    this.bushMesh = inst(bushGeo(), windify(vmat.clone(), 0.12, 'bush'), bushes, { cast: q !== 'baixa' });
+    const nearV = (x, z) => Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < VOLCANO.r * 0.85;
+    const bushes = pick(q === 'baixa' ? 120 : 260, () => { const p = rnd() < 0.18 ? jungle() : ring(30, MAP_R - 50)(); return inDesert(p[0], p[1]) || nearV(p[0], p[1]) || heightAt(p[0], p[1]) > 32 ? null : p; }, 2);
+    this.bushMesh = inst(bushGeo(), windify(vmat.clone(), 0.12, 'bush'), bushes, { cast: q !== 'baixa', chunk: true });
     this.bushes = bushes;
-    const flowers = pick(q === 'baixa' ? 150 : 420, () => { const p = ring(20, 300)(); return inDesert(p[0], p[1]) ? null : p; }, 1);
+    const flowers = pick(q === 'baixa' ? 260 : 760, () => { const p = ring(20, MAP_R - 60)(); return inDesert(p[0], p[1]) || nearV(p[0], p[1]) ? null : p; }, 1);
     inst(flowerGeo(), windify(vmat.clone(), 0.5, 'flower'), flowers, { noProbe: true });
     // catos (colisão + coleta de madeira)
     const cacti = pick(40, () => { const a = rnd() * 6.28, d = Math.sqrt(rnd()) * (DESERT.r - 12); return [DESERT.x + Math.cos(a) * d, DESERT.z + Math.sin(a) * d]; }, 4);
     const cm = inst(cactusGeo(), vmat, cacti, { cast: true, target: true });
     // palmeiras na praia e no deserto
-    const palms = pick(34, () => { if(rnd() < 0.35){ const a = rnd() * 6.28, d = Math.sqrt(rnd()) * (DESERT.r - 15); return [DESERT.x + Math.cos(a) * d, DESERT.z + Math.sin(a) * d]; } const a = rnd() * 6.28, d = MAP_R - 42 + rnd() * 14; return [Math.cos(a) * d, Math.sin(a) * d]; }, 6);
+    const palms = pick(q === 'baixa' ? 60 : 80, () => { if(rnd() < 0.3) return jungle(); if(rnd() < 0.3){ const a = rnd() * 6.28, d = Math.sqrt(rnd()) * (DESERT.r - 15); return [DESERT.x + Math.cos(a) * d, DESERT.z + Math.sin(a) * d]; } const a = rnd() * 6.28, d = MAP_R - 42 + rnd() * 14; return [Math.cos(a) * d, Math.sin(a) * d]; }, 6);
     const pm = inst(palmGeo(), windify(vmat.clone(), 0.04, 'palm'), palms, { cast: true, target: true });
     this.extraRes = [];
-    const reg = (im, list, kind, hp, rad, top) => { if(!im) return; im.userData.extraRes = true; list.forEach((o, i) => this.extraRes.push({ im, idx: i, kind, hp, alive: true, x: o.x, y: o.y, z: o.z, collider: this.physics.addCircle(o.x, o.z, rad * o.s, o.y + top) })); };
+    const reg = (ims, list, kind, hp, rad, top) => { if(!ims) return; ims.forEach(im => im.userData.extraRes = true); list.forEach((o, i) => this.extraRes.push({ im: o._im, idx: o._idx, kind, hp, alive: true, x: o.x, y: o.y, z: o.z, collider: this.physics.addCircle(o.x, o.z, rad * o.s, o.y + top) })); };
     reg(cm, cacti, 'wood', 80, 1.1, 9); reg(pm, palms, 'wood', 120, 0.7, 15);
   }
   _campfires(){
@@ -658,6 +768,18 @@ export class World {
       this.fires.push({ light, pos, base: 30 });
       this.soundSpots.push({ id: 'fire' + x, name: 'fire', pos, vol: 0.6 });
     });
+    // v18: fogueiras extra sem luz dinâmica (brasas emissivas + bloom)
+    for(const [x, z] of (this.poi && this.poi.fires2) || []){
+      const y = heightAt(x, z), g = new THREE.Group(); g.position.set(x, y, z);
+      for(let i = 0; i < 4; i++){ const l = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 3.2, 8), Mat.wood(0x4a2f1c)); l.rotation.set(Math.PI / 2 - 0.25, i * Math.PI / 2, 0); l.position.y = 0.4; g.add(l); }
+      const ember = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), Mat.emissive(0xff6a1a, 3)); g.add(ember);
+      this.group.add(g);
+      const pos = V(x, y + 0.8, z);
+      this.particles.addEmitter({ type: 'fire', rate: 22, pos: pos.clone(), opt: { size: 1.5 } });
+      this.physics.addCircle(x, z, 1.8, y + 1);
+      this.fires.push({ light: null, pos, base: 0 });
+      this.soundSpots.push({ id: 'fire' + x, name: 'fire', pos, vol: 0.6 });
+    }
   }
   // ---------- tempestade ----------
   _storm(){
@@ -692,7 +814,7 @@ export class World {
       S.target = Math.max(28, S.r * 0.62);
       const a = Math.random() * Math.PI * 2, off = (S.r - S.target) * 0.5 * Math.random();
       S.tcx = S.cx + Math.cos(a) * off; S.tcz = S.cz + Math.sin(a) * off;
-      S.shrinkT = 0; S.shrinkDur = 18; S.dmg = S.phase; ev = 'shrink';
+      S.shrinkT = 0; S.shrinkDur = S.phase <= 2 ? 26 : 18; S.dmg = S.phase; ev = 'shrink';
     }
     if(S.shrinking){
       S.shrinkT += dt; const u = Math.min(1, S.shrinkT / S.shrinkDur), e = u * u * (3 - 2 * u);
@@ -712,7 +834,9 @@ export class World {
       return { kind: 'wood', amount: 9, destroyed: !it.alive };
     }
     let list = null;
-    const ed = !!obj.userData.ed, isRock = obj === this.rockMesh || obj === this.edRock;
+    const ed = !!obj.userData.ed, isRock = !!obj.userData.rock || obj === this.edRock;
+    if(obj.userData.map){ const t = obj.userData.map[instanceId]; list = t ? [t] : null; }
+    else
     if(isRock) list = this.rocks.filter(r => r.idx === instanceId && !!r.ed === ed);
     else if(obj.userData.treeKind) list = this.trees.filter(t => t.idx === instanceId && !!t.ed === ed && t.pine === (obj.userData.treeKind === 'pine'));
     const it = list && list[0]; if(!it || !it.alive) return null;
@@ -721,7 +845,8 @@ export class World {
     if(it.hp <= 0){
       it.alive = false;
       const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-      if(isRock){ obj.setMatrixAt(it.idx, zero); obj.instanceMatrix.needsUpdate = true; }
+      if(it.parts) it.parts.forEach(e => { e.m.setMatrixAt(e.i, zero); e.m.instanceMatrix.needsUpdate = true; });
+      else if(isRock){ obj.setMatrixAt(it.idx, zero); obj.instanceMatrix.needsUpdate = true; }
       else { const tm = ed ? this.edTree : this.treeMeshes; const a = it.pine ? [tm.iPT, tm.iP] : [tm.iT, tm.iL]; a.forEach(m => { m.setMatrixAt(it.idx, zero); m.instanceMatrix.needsUpdate = true; }); }
       it.collider.r = 0; it.collider.top = -1e9;
       this.particles.emit(isRock ? 'stone' : 'wood', point.clone().setY(it.y + 4), { count: 40 });
@@ -774,7 +899,7 @@ export class World {
     WIND_U.uTime.value = this.t;
     WIND_U.uWind.value.set(Wind.dir.x * Wind.strength * 0.06, 0, Wind.dir.z * Wind.strength * 0.06);
     if(this.waterNormal){ this.waterNormal.offset.x += dt * 0.02; this.waterNormal.offset.y += dt * 0.013; }
-    for(const f of this.fires) f.light.intensity = f.base * (0.8 + Math.sin(this.t * 13) * 0.08 + Math.sin(this.t * 7.3) * 0.1 + Math.random() * 0.06);
+    for(const f of this.fires) if(f.light) f.light.intensity = f.base * (0.8 + Math.sin(this.t * 13) * 0.08 + Math.sin(this.t * 7.3) * 0.1 + Math.random() * 0.06);
     for(const c of this.chests){
       if(c.openT > 0 && c.openT < 1){ c.openT = Math.min(1, c.openT + dt * 2.5); c.lid.rotation.x = -1.9 * (1 - Math.pow(1 - c.openT, 3)); c.glow.intensity = 3 + (1 - c.openT) * 12; }
       else if(!c.opened) c.glow.intensity = 2.5 + Math.sin(this.t * 3) * 0.8;
@@ -787,5 +912,21 @@ export class World {
       p.t += dt; p.group.rotation.y += dt * 1.5; p.group.position.y = p.pos.y + Math.sin(p.t * 2) * 0.25;
     }
     if(this.poi && this.poi.beam) this.poi.beam.rotation.y += dt * 0.7;
+    // v18: moinhos, radar, gema do templo, luz da antena, lava
+    if(this.poi && this.poi.spinners) for(const sp of this.poi.spinners){ sp.o.rotation[sp.ax] += dt * sp.sp; if(sp.bob) sp.o.position.y = sp.bob + Math.sin(this.t * 1.6) * 0.4; }
+    if(this.poi && this.poi.blinks) for(const b of this.poi.blinks) b.visible = (this.t % 1.4) < 0.7;
+    if(this.lavaU) this.lavaU.value = this.t;
+    if(this.grassU && camera){ this.grassU.uCam.value.copy(camera.position); }
+    // v18: culling por distância dos grupos pequenos (baús, adereços) + emissores de partículas longe da câmara
+    if(camera){
+      this.particles.camPos = camera.position;
+      if(!this._far){
+        this._far = []; const bs = new THREE.Box3(), sp = new THREE.Sphere();
+        const pk = new Set(this.pickups.map(p => p.group)); for(const c of this.group.children){ if(!c.isGroup || !c.children.length || pk.has(c)) continue; bs.setFromObject(c); if(bs.isEmpty()) continue; bs.getBoundingSphere(sp); if(sp.radius < 14) this._far.push({ o: c, x: sp.center.x, z: sp.center.z, r: sp.radius, v: c.visible }); }
+        this._farI = 0;
+      }
+      const D = this.q === 'baixa' ? 190 : 280, cx = camera.position.x, cz = camera.position.z, L = this._far, n = Math.min(L.length, 120);
+      for(let k = 0; k < n; k++){ const e = L[this._farI = (this._farI + 1) % L.length]; const d = Math.hypot(e.x - cx, e.z - cz) - e.r; const vis = d < D; if(vis !== e.v){ e.v = vis; e.o.visible = vis; } }
+    }
   }
 }
