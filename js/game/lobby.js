@@ -14,11 +14,12 @@ import { ParticleSystem } from '../engine/particles.js';
 import { CinematicDirector, DEFAULT_SHOTS } from '../engine/camera.js';
 import { Mat } from '../engine/materials.js';
 import { Wind } from '../anim/secondary.js';
+import { makeBattleBus } from './bus.js';
 
 const PARTY = [
-  { skin: 'red', name: 'Raven_BR', pitch: 120, x: -7.2, z: -3.2, yaw: 0.3 },
-  { skin: 'pink', name: 'SkyeTV', pitch: 230, x: 7.2, z: -3.2, yaw: -0.3 },
-  { skin: 'shadow', name: 'Midas77', pitch: 105, x: -13.5, z: -8.5, yaw: 0.45 }
+  { skin: 'red', name: 'Raven_BR', pitch: 120, x: -4.8, z: -2.6, yaw: 0.3 },
+  { skin: 'pink', name: 'SkyeTV', pitch: 230, x: 4.8, z: -2.6, yaw: -0.3 },
+  { skin: 'shadow', name: 'Midas77', pitch: 105, x: 8.8, z: -10.5, yaw: -0.4 }
 ];
 
 export class Lobby {
@@ -81,6 +82,13 @@ export class Lobby {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(30.2, 0.18, 8, 128), Mat.emissive(0x7dd3fc, 3)); ring.rotation.x = Math.PI / 2; s.add(ring);
     const ring2 = new THREE.Mesh(new THREE.TorusGeometry(34.6, 0.14, 8, 128), Mat.emissive(0xc084fc, 2.4)); ring2.rotation.x = Math.PI / 2; ring2.position.y = -1.0; s.add(ring2);
     this.spots = [];
+    // v17: pódios para cada membro do grupo (base metálica + anel luminoso + faixa)
+    const podM = new THREE.MeshPhysicalMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.28, clearcoat: 0.6 }), podTop = new THREE.MeshPhysicalMaterial({ color: 0x334155, metalness: 0.3, roughness: 0.35, clearcoat: 1 });
+    for(const p of [{ x: 0, z: 0, r: 4.2, c: 0xfacc15 }, ...PARTY.map(p => ({ x: p.x, z: p.z, r: 3.4, c: 0x7dd3fc }))]){
+      const pd = new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r + 0.35, 0.5, 48), podM); pd.position.set(p.x, 0.25 - 0.5, p.z); pd.receiveShadow = true; pd.castShadow = true; s.add(pd);
+      const tp = new THREE.Mesh(new THREE.CircleGeometry(p.r - 0.1, 48), podTop); tp.rotation.x = -Math.PI / 2; tp.position.set(p.x, 0.005, p.z); tp.receiveShadow = true; s.add(tp);
+      const rg = new THREE.Mesh(new THREE.TorusGeometry(p.r + 0.05, 0.07, 6, 64), Mat.emissive(p.c, 2.2)); rg.rotation.x = Math.PI / 2; rg.position.set(p.x, 0.02, p.z); s.add(rg);
+    }
     for(const p of [{ x: 0, z: 0, r: 5 }, ...PARTY.map(p => ({ x: p.x, z: p.z, r: 4 }))]){
       const d = new THREE.Mesh(new THREE.RingGeometry(p.r - 0.2, p.r, 64), new THREE.MeshBasicMaterial({ color: 0xa5f3fc, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
       d.rotation.x = -Math.PI / 2; d.position.set(p.x, 0.03, p.z); s.add(d); this.spots.push(d);
@@ -114,11 +122,8 @@ export class Lobby {
     };
     mkIsland(-62, 14, -150, 1.0); mkIsland(70, 22, -190, 1.2); mkIsland(-120, 30, -260, 1.5); mkIsland(125, 6, -240, 1.1);
     // ônibus de batalha a atravessar o céu com o balão azul
-    const bus = this.bus = new THREE.Group();
-    const bb = new THREE.Mesh(new THREE.BoxGeometry(9, 3.4, 3.4), Mat.paint(0x2563eb)); bus.add(bb);
-    const bw = new THREE.Mesh(new THREE.BoxGeometry(9.05, 1.1, 3.45), Mat.glass(0xbfe6ff)); bw.position.y = 0.6; bus.add(bw);
-    const bal = new THREE.Mesh(new THREE.SphereGeometry(4.2, 20, 14), Mat.paint(0x60a5fa)); bal.scale.set(1.35, 1, 1); bal.position.y = 8; bus.add(bal);
-    for(const dx of [-3, 3]){ const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 5, 4), Mat.polymer(0x111827)); rope.position.set(dx, 3.9, 0); bus.add(rope); }
+    // v17: o mesmo Ônibus de Batalha detalhado da partida
+    const bus = this.bus = makeBattleBus(); bus.scale.setScalar(0.55); bus.rotation.y = Math.PI / 2;
     bus.position.set(-260, 48, -300); s.add(bus);
     // iluminação de estúdio: key + fill + rim — hemisférica mais baixa (rostos menos lavados, mais volume)
     s.add(new THREE.HemisphereLight(0xbcd4ff, 0x3a2f63, 0.55));

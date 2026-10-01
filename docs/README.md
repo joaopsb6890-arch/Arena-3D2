@@ -160,3 +160,13 @@ Retargeting: os clips são definidos em rotações locais normalizadas e aplicad
 - Texturas procedurais de 512–2048 px (não 4K), para manter o carregamento instantâneo sem ficheiros externos.
 - SSS da pele é uma aproximação (transmissão + sheen), não difusão real em subsuperfície.
 - Multiplayer (Firebase) não está ligado; os adversários são bots.
+
+## Novidades v17
+
+- Texturas: terreno com camadas coloridas (relva, areia, rocha, neve, terra), rocha triplanar nas encostas, transição por altura; madeira com nós e pregos, pedra com grão, reboco salpicado.
+- Qualidade Baixa sem pixelização: resolução nativa 1.0 com FXAA, e o modo adaptativo já não desce abaixo de 0.85.
+- Movimento mais rápido: andar 20, correr 28; deslize a 40 com impulso nas descidas e direção controlável.
+- Itens táticos (T troca, X usa): Granada, Granada de Impulso, Splash de Escudo, Granada de Fumo (bloqueia a visão dos bots) e Arbusto (disfarce).
+- Pesca: cardumes no lago e no rio (E) com peixes de escudo, vida e voadores.
+- Missões diárias (3 por dia) e desafios de temporada com XP, rastreador no HUD e passe de batalha no lobby.
+- Lobby: cartões de passe, missões e novidades, pódios com anel luminoso e o Ônibus de Batalha detalhado.

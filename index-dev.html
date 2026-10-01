@@ -47,7 +47,12 @@
 
 <section class="panel show" id="panel-lobby">
   <div class="lobby-left">
-    <div class="season"><b>CAPÍTULO 5</b><span>TEMPORADA 3 · Estúdio de animação</span></div>
+    <div class="lobby-cards">
+      <div id="bp-card" class="l-card bp"></div>
+      <div class="l-card quests"><h6>MISSÕES DIÁRIAS <small>+XP</small></h6><ul id="daily-quests"></ul><button class="l-link" data-go="challenges">Ver todos os desafios</button></div>
+      <div class="l-card news" id="news-card"><h6>NOVIDADES</h6><div class="news-rot"><p><b>Pesca</b>Procura os cardumes no lago e no rio (E) e apanha peixes de escudo, vida e voadores.</p><p><b>Táticos</b>Granada de Impulso, Splash de Escudo, Fumo e Arbusto. T troca, X usa.</p><p><b>Mais rápido</b>Corrida e deslize mais velozes. Desliza nas descidas para ganhar ainda mais velocidade.</p></div></div>
+    </div>
+    <div class="season"><b>CAPÍTULO 5</b><span>TEMPORADA 4 · Ilha Renovada</span></div>
   </div>
   <div class="lobby-right">
     <button id="cine-btn" class="ghost-btn">Câmera cinematográfica</button>
@@ -163,7 +168,7 @@
     <label><span>Hora do dia</span><input id="set-time" type="range" min="0" max="24" step="0.5"></label>
     <label class="chk"><input id="set-party" type="checkbox"><span>Mostrar grupo no lobby</span></label>
     <label class="chk"><input id="set-stats" type="checkbox"><span>Mostrar FPS / estatísticas (F8)</span></label>
-    <div class="keys"><b>Controles</b><span>WASD mover · Shift correr · Espaço pular · C agachar (a correr: deslizar) · Mouse mirar/atirar · R recarregar · 1–5 slots · Q construir (Z parede, X piso, C rampa, V telhado, botão direito/N material, segurar clique = turbo) · Y editar peça · X granada · Z fenda · botão do meio marcar · E interagir/tirolesa · H poção · G kit · B emote · M mapa · Esc pausa</span></div>
+    <div class="keys"><b>Controles</b><span>WASD mover · Shift correr · Espaço pular · C agachar (a correr: deslizar) · Mouse mirar/atirar · R recarregar · 1–5 slots · Q construir (Z parede, X piso, C rampa, V telhado, botão direito/N material, segurar clique = turbo) · Y editar peça · X item tático · T trocar tático · Z fenda · E pescar nos cardumes · botão do meio marcar · E interagir/tirolesa · H poção · G kit · B emote · M mapa · Esc pausa</span></div>
   </div>
 </section>
 
@@ -191,7 +196,8 @@
     <div class="bar sh"><i id="sh-fill"></i><b id="sh-num">0</b></div>
     <div class="bar hp"><i id="hp-fill"></i><b id="hp-num">100</b></div>
   </div>
-  <div id="mats"><span class="m wood" id="mat-wood"><i></i><b id="wood-count">0</b></span><span class="m stone" id="mat-stone"><i></i><b id="stone-count">0</b></span><span class="m metal" id="mat-metal"><i></i><b id="metal-count">0</b></span><span class="m gren"><i></i><b id="grenade-count">0</b></span><span class="m rift"><i></i><b id="rift-count">0</b></span><span class="m pot"><i></i><b id="potion-count">0</b></span><span class="m med"><i></i><b id="medkit-count">0</b></span><span class="m gold"><i></i><b id="gold-count">0</b></span></div>
+  <div id="quest-tracker"></div>
+  <div id="mats"><span class="m wood" id="mat-wood"><i></i><b id="wood-count">0</b></span><span class="m stone" id="mat-stone"><i></i><b id="stone-count">0</b></span><span class="m metal" id="mat-metal"><i></i><b id="metal-count">0</b></span><span class="m gren" title="Item tático (T troca, X usa)"><i></i><b id="grenade-count">0</b><small id="tac-name">Granada</small></span><span class="m rift"><i></i><b id="rift-count">0</b></span><span class="m pot"><i></i><b id="potion-count">0</b></span><span class="m med"><i></i><b id="medkit-count">0</b></span><span class="m gold"><i></i><b id="gold-count">0</b></span></div>
   <div id="slots">
     <div class="slot" id="slot-1"><em>1</em><div class="slot-ico"></div><span class="slot-name"></span></div>
     <div class="slot" id="slot-2"><em>2</em><div class="slot-ico"></div><span class="slot-name"></span></div>

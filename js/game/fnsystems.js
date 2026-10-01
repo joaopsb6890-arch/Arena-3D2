@@ -70,7 +70,7 @@ export class FortSystems {
     actor.mode = 'zip'; actor.body.grounded = false; actor.body.vel.set(0, 0, 0); actor.slideT = 0;
     actor.anim.play('deployGlider');
     this.m.audio.play('build', actor.root.position, { vol: 0.35, rate: 1.8 });
-    if(actor.isPlayer) this.m.toast('Tirolesa — ESPAÇO para saltar');
+    if(actor.isPlayer){ this.m.toast('Tirolesa — ESPAÇO para saltar'); this.m.quest('zip'); }
     return true;
   }
   zipStep(actor, dt){
@@ -125,12 +125,12 @@ export class FortSystems {
     const m = this.m, p = L.pos.clone().setY(L.pos.y + 5);
     m.particles.emit('confetti', p, { count: 60 }); m.particles.flash(p, 0xc084fc, 14, 0.6, 30); m.particles.emit('magic', p, { color: 0xe9d5ff, n: 30 });
     m.audio.play('chest', p, { vol: 1, rate: 0.8 }); m.particles.removeEmitter(L.emitter); m.physics.removeCircle(L.col);
-    actor.mats.wood += 150; actor.mats.stone += 150; actor.mats.metal += 150; actor.grenades += 3; actor.rifts += 1; actor.potions += 1;
+    actor.mats.wood += 150; actor.mats.stone += 150; actor.mats.metal += 150; actor.grenades += 3; actor.rifts += 1; actor.potions += 1; actor.tac.impulso += 2; actor.tac.escudo += 2; actor.tac.fumo += 1; actor.tac.arbusto += 1;
     GUNS.forEach(k => actor.reserve[k] = (actor.reserve[k] || 0) + 40);
     const spawnAt = (i) => L.pos.clone().add(V(Math.sin(i) * 4, 0, Math.cos(i) * 4));
     this.W.spawnPickup(GUNS[Math.floor(Math.random() * GUNS.length)], spawnAt(0.3), 1, { rar: 3 + (Math.random() < 0.4 ? 1 : 0) });
     this.W.spawnPickup(GUNS[Math.floor(Math.random() * GUNS.length)], spawnAt(2.4), 1, { rar: 2 + (Math.random() < 0.5 ? 1 : 0) });
-    if(actor.isPlayer){ m.toast('LHAMA! +150 de cada material, 3 granadas, 1 fenda'); m._updateSlotsUI(); }
+    if(actor.isPlayer){ m.toast('LHAMA! Materiais, granadas, táticos e 1 fenda'); m._updateSlotsUI(); m.quest('llama'); }
   }
   _openAmmo(actor, A){
     if(A.opened) return; A.opened = true; A.openT = 0.001;
@@ -141,18 +141,20 @@ export class FortSystems {
     if(actor.isPlayer) m.toast('Munição reabastecida');
   }
   // ---------------- granadas / explosões ----------------
-  throwGrenade(actor, dir, power){
-    if(actor.grenades <= 0 || !actor.alive || actor.mode !== 'ground' || actor.using > 0) return false;
+  throwGrenade(actor, dir, power, kind){
+    kind = kind || 'granada';
+    if(!actor.tac || (actor.tac[kind] || 0) <= 0 || !actor.alive || actor.mode !== 'ground' || actor.using > 0) return false;
     if(this.m.time - (actor._gT || -9) < 0.8) return false;
     actor._gT = this.m.time;
-    actor.grenades--;
+    actor.tac[kind]--;
+    const X = this.m.fx2, mats = X && X.mats[kind];
     const o = actor.root.position.clone(); o.y += 6.8; o.x += Math.sin(actor.yaw) * 1.4; o.z += Math.cos(actor.yaw) * 1.4;
     const d = dir.clone().normalize();
     const vel = d.multiplyScalar(56 * (power || 1)).add(V(0, 13, 0));
-    const mesh = new THREE.Mesh(this.gGeo, this.gMat); mesh.castShadow = true;
-    const led = new THREE.Mesh(this.ledGeo, this.gLed); led.position.y = 0.45; mesh.add(led);
+    const mesh = new THREE.Mesh(this.gGeo, mats ? mats[0] : this.gMat); mesh.castShadow = true;
+    const led = new THREE.Mesh(this.ledGeo, mats ? mats[1] : this.gLed); led.position.y = 0.45; mesh.add(led);
     mesh.position.copy(o); this.m.scene.add(mesh);
-    this.grenades.push({ mesh, led, pos: o, vel, t: 2.1, owner: actor, spin: V(Math.random() * 10, Math.random() * 10, 0) });
+    this.grenades.push({ mesh, led, pos: o, vel, t: kind === 'granada' ? 2.1 : 1.3, kind, owner: actor, spin: V(Math.random() * 10, Math.random() * 10, 0) });
     actor.anim.play('pickaxeSwing3', { speed: 1.4 });
     this.m.audio.play('woosh', o, { vol: 0.5, rate: 1.3 });
     if(actor.isPlayer) this.m._updateSlotsUI();
@@ -272,7 +274,7 @@ export class FortSystems {
     const m = this.m, P = m.player;
     for(let i = this.grenades.length - 1; i >= 0; i--){
       const g = this.grenades[i]; g.t -= dt; this._stepGrenade(g, dt);
-      if(g.t <= 0){ m.scene.remove(g.mesh); this.grenades.splice(i, 1); this.explode(g.pos.clone(), 14, 78, g.owner); }
+      if(g.t <= 0){ m.scene.remove(g.mesh); this.grenades.splice(i, 1); if(g.kind && g.kind !== 'granada' && m.fx2) m.fx2.detonate(g); else this.explode(g.pos.clone(), 14, 78, g.owner); }
     }
     for(const L of this.llamas){
       L.t += dt;
@@ -296,7 +298,7 @@ export class FortSystems {
     if(this._locT <= 0 && P){
       this._locT = 0.5;
       const L = P.alive && !P.onBus ? locationAt(P.root.position.x, P.root.position.z) : null;
-      if(L !== this.loc){ this.loc = L; if(L && (P.mode === 'ground' || P.mode === 'glide')) this._banner(L.n); }
+      if(L !== this.loc){ this.loc = L; if(L && (P.mode === 'ground' || P.mode === 'glide')){ this._banner(L.n); if(m.fx2) m.fx2.visit(L.n); } }
     }
   }
   _banner(name){

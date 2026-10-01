@@ -144,10 +144,15 @@ const GEN = {
     for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
       const pv = y / H * planks, pi = Math.floor(pv), pf = pv - pi;
       const seam = Math.min(1, Math.min(pf, 1 - pf) * 40);
-      const grain = Math.sin((x / W * 30 + fbm(n, x / 50, y / 6 + pi * 17, 4, W / 50) * 8) * Math.PI) * 0.5 + 0.5;
-      h[y * W + x] = (grain * 0.5 + 0.5) * seam;
+      // v17: nós na madeira, tom diferente por tábua e pregos nas pontas
+      let kx = 0; const kc = ((pi * 0.37 + 0.2) % 1) * W, ky = (pi + 0.5) * H / planks, kd = Math.hypot((x - kc) * 0.6, y - ky);
+      if(kd < W / 26) kx = (1 - kd / (W / 26)) * Math.sin(kd * 0.9) * 0.35;
+      const grain = Math.sin((x / W * 30 + fbm(n, x / 50, y / 6 + pi * 17, 4, W / 50) * 8 + kx * 6) * Math.PI) * 0.5 + 0.5;
+      const tone = 0.82 + ((pi * 7919) % 13) / 13 * 0.18;
+      const nail = (Math.abs(x - W * 0.04) < W / 180 || Math.abs(x - W * 0.96) < W / 180) && Math.abs(pf - 0.5) < 0.06 ? -0.4 : 0;
+      h[y * W + x] = ((grain * 0.5 + 0.5) * tone + nail) * seam;
     }
-    return { h, strength: 2.6, rough: [0.62, 0.9] };
+    return { h, strength: 2.6, rough: [0.62, 0.9], detail: [0.66, 1.0] };
   },
   // grama/terreno
   ground(W, H, n){
@@ -163,9 +168,9 @@ const GEN = {
     for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
       const r = fbm(n, x / 30, y / 30, 6, W / 30);
       const c = Math.abs(fbm(n, x / 12 + 9, y / 12, 3, W / 12) - 0.5);
-      h[y * W + x] = r * 0.8 + (c < 0.04 ? -0.3 : 0);
+      h[y * W + x] = r * 0.8 + (c < 0.04 ? -0.3 : 0) + n(x / 2, y / 2, W / 2) * 0.06;
     }
-    return { h, strength: 3.6, rough: [0.7, 0.98] };
+    return { h, strength: 3.6, rough: [0.7, 0.98], detail: [0.68, 1.0] };
   },
   // v16: tijolo (fiadas desencontradas + argamassa funda)
   brick(W, H, n){
@@ -205,9 +210,10 @@ const GEN = {
   plaster(W, H, n){
     const h = new Float32Array(W * H);
     for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
-      h[y * W + x] = fbm(n, x / 14, y / 14, 5, W / 14);
+      // v17: reboco com salpicado fino + manchas de humidade
+      h[y * W + x] = fbm(n, x / 14, y / 14, 5, W / 14) * 0.8 + n(x / 1.6, y / 1.6, W / 1.6) * 0.14 + fbm(n, x / 90 + 40, y / 90, 2, W / 90) * 0.12;
     }
-    return { h, strength: 1.5, rough: [0.8, 0.95] };
+    return { h, strength: 1.5, rough: [0.8, 0.95], detail: [0.8, 1.0] };
   },
   // cabelo: fios paralelos
   hair(W, H, n){
@@ -240,7 +246,7 @@ export function getSurface(kind, res){
   for(let i = 0; i < h.length; i++) rh[i] = 1 - h[i];
   const roughnessMap = toTexture(grayToRGBA(rh, W, W, rough[0], rough[1]), W, W, false);
   // detail/albedo: variação sutil de luminância (multiplica a cor)
-  const detailMap = toTexture(grayToRGBA(h, W, W, detail ? detail[0] : 0.86, detail ? detail[1] : 1.0), W, W, true);
+  const detailMap = toTexture(grayToRGBA(h, W, W, detail ? detail[0] : 0.8, detail ? detail[1] : 1.0), W, W, true);
   const res2 = { normalMap, roughnessMap, detailMap, displacementMap: roughnessMap };
   cache.set(key, res2);
   return res2;
@@ -273,4 +279,59 @@ export function getParticleAtlas(){
   atlas = new THREE.CanvasTexture(c);
   atlas.colorSpace = THREE.SRGBColorSpace;
   return atlas;
+}
+
+// ============================================================
+// v17: camadas de textura do terreno (albedo colorido, média ~0.5 → o shader multiplica por 2).
+// Relva com folhas pintadas, areia com ondulações, rocha com fendas e estratos, neve com brilho
+// e terra com seixos. Todas repetem sem costura (as pinceladas são desenhadas também "do outro lado").
+// ============================================================
+const terrainCache = {};
+function _cv(W){ const c = document.createElement('canvas'); c.width = c.height = W; return [c, c.getContext('2d')]; }
+function _baseNoise(ctx, W, n, scale, oct, lo, hi, tint){
+  const img = ctx.createImageData(W, W), d = img.data;
+  for(let y = 0; y < W; y++) for(let x = 0; x < W; x++){
+    const v = lo + (hi - lo) * fbm(n, x / scale, y / scale, oct, W / scale), i = (y * W + x) * 4;
+    const t2 = fbm(n, x / (scale * 3) + 50, y / (scale * 3) + 50, 3, W / (scale * 3));
+    d[i] = Math.min(255, v * tint[0] * (0.92 + t2 * 0.16) * 255); d[i + 1] = Math.min(255, v * tint[1] * 255); d[i + 2] = Math.min(255, v * tint[2] * (1.08 - t2 * 0.16) * 255); d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function _wrap(ctx, W, fn){ for(const ox of [-W, 0, W]) for(const oy of [-W, 0, W]) { ctx.save(); ctx.translate(ox, oy); fn(); ctx.restore(); } }
+function _tex(c, rep){ const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true; return t; }
+export function getTerrainLayers(res){
+  const W = Math.min(512, res || 512);
+  if(terrainCache[W]) return terrainCache[W];
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const out = {};
+  // relva
+  { const [c, g] = _cv(W), n = makeNoise(101); _baseNoise(g, W, n, W / 10, 4, 0.40, 0.56, [0.96, 1.02, 0.9]);
+    const cols = ['rgba(150,190,90,.5)', 'rgba(60,95,40,.45)', 'rgba(185,200,110,.4)', 'rgba(90,130,55,.5)', 'rgba(40,70,30,.35)'];
+    for(let i = 0; i < W * 9; i++){ const x = rnd() * W, y = rnd() * W, L = 3 + rnd() * W / 40, a = -Math.PI / 2 + (rnd() - 0.5) * 1.1, col = cols[Math.floor(rnd() * cols.length)], w = 0.8 + rnd() * 1.4;
+      const draw = () => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * L * 0.5 + (rnd() - 0.5) * 2, y + Math.sin(a) * L * 0.5, x + Math.cos(a) * L, y + Math.sin(a) * L); g.stroke(); };
+      if(x < 20 || y < 20 || x > W - 20 || y > W - 20) _wrap(g, W, draw); else draw(); }
+    for(let i = 0; i < W / 6; i++){ const x = rnd() * W, y = rnd() * W; g.fillStyle = rnd() < 0.5 ? 'rgba(235,225,120,.45)' : 'rgba(250,250,250,.35)'; g.beginPath(); g.arc(x, y, 0.8 + rnd() * 1.2, 0, 7); g.fill(); }
+    out.grass = _tex(c); }
+  // areia
+  { const [c, g] = _cv(W), n = makeNoise(202); const img = g.createImageData(W, W), d = img.data;
+    for(let y = 0; y < W; y++) for(let x = 0; x < W; x++){ const w = fbm(n, x / 40, y / 40, 3, W / 40); const rip = Math.sin((y / W * 22 + w * 5) * Math.PI * 2) * 0.5 + 0.5; const gr = n(x * 1.3, y * 1.3, W * 1.3); const v = 0.44 + rip * 0.07 + (gr - 0.5) * 0.1, i = (y * W + x) * 4; d[i] = v * 1.04 * 255; d[i + 1] = v * 255; d[i + 2] = v * 0.9 * 255; d[i + 3] = 255; }
+    g.putImageData(img, 0, 0);
+    for(let i = 0; i < W * 2; i++){ const x = rnd() * W, y = rnd() * W; g.fillStyle = rnd() < 0.5 ? 'rgba(90,70,50,.35)' : 'rgba(255,250,235,.4)'; g.fillRect(x, y, 1, 1); }
+    out.sand = _tex(c); }
+  // rocha
+  { const [c, g] = _cv(W), n = makeNoise(303); const img = g.createImageData(W, W), d = img.data;
+    for(let y = 0; y < W; y++) for(let x = 0; x < W; x++){ const b = fbm(n, x / 26, y / 26, 5, W / 26), st = Math.sin((y / W * 9 + fbm(n, x / 60, y / 60, 2, W / 60) * 2.2) * Math.PI * 2) * 0.5 + 0.5; const cr = Math.abs(fbm(n, x / 18 + 30, y / 18, 3, W / 18) - 0.5); let v = 0.36 + b * 0.22 + st * 0.05; if(cr < 0.025) v *= 0.55 + cr * 14; const i = (y * W + x) * 4; d[i] = v * 1.02 * 255; d[i + 1] = v * 0.99 * 255; d[i + 2] = v * 0.95 * 255; d[i + 3] = 255; }
+    g.putImageData(img, 0, 0); out.rock = _tex(c); }
+  // neve
+  { const [c, g] = _cv(W), n = makeNoise(404); _baseNoise(g, W, n, W / 8, 4, 0.47, 0.54, [0.97, 0.99, 1.04]);
+    for(let i = 0; i < W * 1.5; i++){ const x = rnd() * W, y = rnd() * W; g.fillStyle = 'rgba(255,255,255,.9)'; g.fillRect(x, y, 1, 1); }
+    out.snow = _tex(c); }
+  // terra / caminho
+  { const [c, g] = _cv(W), n = makeNoise(505); _baseNoise(g, W, n, W / 16, 5, 0.38, 0.56, [1.05, 0.98, 0.9]);
+    for(let i = 0; i < W * 0.9; i++){ const x = rnd() * W, y = rnd() * W, r = 1 + rnd() * W / 130, t = 90 + rnd() * 80;
+      const draw = () => { g.fillStyle = `rgba(${t + 10},${t},${t - 12},.85)`; g.beginPath(); g.ellipse(x, y, r * (1 + rnd() * 0.6), r, rnd() * 3, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.arc(x - r * 0.3, y - r * 0.3, r * 0.4, 0, 7); g.fill(); g.fillStyle = 'rgba(0,0,0,.18)'; g.beginPath(); g.arc(x + r * 0.2, y + r * 0.5, r * 0.6, 0, 3.14); g.fill(); };
+      if(x < 8 || y < 8 || x > W - 8 || y > W - 8) _wrap(g, W, draw); else draw(); }
+    out.dirt = _tex(c); }
+  terrainCache[W] = out;
+  return out;
 }

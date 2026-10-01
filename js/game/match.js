@@ -13,6 +13,8 @@ import { BotBrain } from './ai.js';
 import { WEAPON_STATS, createWeapon, createPickaxe, createGlider, createPotion, createMedkit, RARITY, GUNS, rollRarity } from './weapons.js';
 import { pieceGeometry, buildMaterials, BUILD_MATS, EDITS } from './buildpieces.js';
 import { FortSystems } from './fnsystems.js';
+import { FortExtras, TACTICALS } from './fnextra.js';
+import { makeBattleBus } from './bus.js';
 import { PICKAXES, GLIDERS } from './cosmetics.js';
 import { TPSCamera, CinematicDirector } from '../engine/camera.js';
 import { ParticleSystem } from '../engine/particles.js';
@@ -60,6 +62,7 @@ export class Match {
     this.net = session ? new NetSync(this, session, session.startInfo) : null;
     this.sys = new MatchSystems(this);
     this.fs = new FortSystems(this);
+    this.fx2 = new FortExtras(this);
     this.rules = new ModeRules(this, this.modeId); this.mode = this.rules.M;
     if(this.layout) this.layoutObjs = buildLayout(this, this.layout, false);
     if(this.mode.creative) this.creative = new CreativeTools(this);
@@ -125,30 +128,7 @@ export class Match {
   weaponStats(w){ return WEAPON_STATS[w]; }
   isAlly(a, b){ return this.rules ? this.rules.isAlly(a, b) : false; }
   _finish(win, killer, sub){ this.endMatch(win, killer, sub); }
-  _makeBus(){
-    // v16: Ônibus de Batalha mais detalhado — carroçaria arredondada, janelas, rodas, balão às riscas com cordas
-    const g = new THREE.Group(), add = (geo, mat, x, y, z, rx, ry, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0); g.add(m); return m; };
-    const blue = Mat.paint(0x2563eb), white = Mat.paint(0xf1f5f9), yel = Mat.paint(0xfbbf24), dark = Mat.polymer(0x111827), glass = Mat.glass(0x93c5fd), chrome = Mat.metal(0xd1d5db, 0.2);
-    add(new RoundedBoxGeometry(8, 7, 22, 3, 1.2), blue, 0, 0, 0);
-    add(new RoundedBoxGeometry(8.2, 0.8, 22.2, 2, 0.35), white, 0, 3.6, 0);
-    add(new THREE.BoxGeometry(8.25, 1, 22.3), yel, 0, -1.6, 0);
-    for(let i = 0; i < 6; i++) for(const sx of [-1, 1]) add(new THREE.BoxGeometry(0.12, 2.1, 2.6), glass, sx * 4.05, 1.2, -8 + i * 3.1);
-    add(new THREE.BoxGeometry(7, 2.6, 0.14), glass, 0, 1.2, 11.05);
-    add(new THREE.BoxGeometry(8.4, 1, 0.8), chrome, 0, -3.1, 11.1); add(new THREE.BoxGeometry(8.4, 1, 0.8), chrome, 0, -3.1, -11.1);
-    for(const sx of [-2.8, 2.8]) add(new THREE.CylinderGeometry(0.6, 0.6, 0.2, 16), Mat.emissive(0xfff3c4, 2), sx, -1.8, 11.1, Math.PI / 2);
-    for(const sx of [-1, 1]) for(const sz of [-7, 7]){ add(new THREE.CylinderGeometry(1.5, 1.5, 1, 20), dark, sx * 3.8, -3.6, sz, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.7, 0.7, 1.05, 12), chrome, sx * 3.85, -3.6, sz, 0, 0, Math.PI / 2); }
-    add(new THREE.BoxGeometry(0.4, 3, 6), blue, 0, 5.4, -8.5); add(new THREE.BoxGeometry(3.4, 0.3, 3), yel, 0, 6.8, -9.5);
-    // balão com gomos coloridos
-    const bg = new THREE.SphereGeometry(10, 32, 20), bp = bg.attributes.position, col = new Float32Array(bp.count * 3), c1 = new THREE.Color(0x60a5fa), c2 = new THREE.Color(0xf8fafc);
-    for(let i = 0; i < bp.count; i++){ const a = Math.atan2(bp.getZ(i), bp.getX(i)); const c = Math.floor((a + Math.PI) / (Math.PI * 2) * 12) % 2 ? c1 : c2; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
-    bg.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const bal = add(bg, Mat.vcolor('busballoon', { roughness: 0.5 }), 0, 19, 0); bal.scale.set(1, 1.1, 1.4);
-    add(new THREE.TorusGeometry(10.1, 0.35, 8, 40), yel, 0, 19, 0, Math.PI / 2).scale.set(1, 1.4, 1);
-    add(new THREE.CylinderGeometry(1.2, 2, 1.6, 16), dark, 0, 7.4, 0);
-    for(let i = 0; i < 4; i++){ const sx = i < 2 ? -3 : 3, sz = i % 2 ? -8 : 8, top = new THREE.Vector3(sx * 1.6, 12, sz * 1.2), bot = new THREE.Vector3(sx, 4, sz), d = top.clone().sub(bot); const r = add(new THREE.CylinderGeometry(0.08, 0.08, d.length(), 4), Mat.metal(0x444444), (top.x + bot.x) / 2, (top.y + bot.y) / 2, (top.z + bot.z) / 2); r.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); }
-    g.traverse(o => { if(o.isMesh) o.castShadow = true; });
-    this.scene.add(g); return g;
-  }
+  _makeBus(){ const g = makeBattleBus(); this.scene.add(g); return g; }
   jumpFromBus(ac){
     ac.onBus = false; ac.root.visible = true;
     ac.body.pos.copy(this.bus.position).add(new THREE.Vector3((Math.random() - 0.5) * 4, -6, (Math.random() - 0.5) * 4));
@@ -172,7 +152,7 @@ export class Match {
       if(this.paused || this.phase === 'over') return;
       if(e.code === 'Space' && this.phase === 'bus'){ this.jumpFromBus(P); return; }
       if(e.code === 'Space' && P.mode === 'freefall' && P.alive){ P.wantDeploy = true; if((P.height || 999) >= 240) this.toast('Alto demais para abrir o planador'); return; }
-      if(e.code === 'KeyT' && this.sys) this.sys.vendorBuy(P, 1);
+      if(e.code === 'KeyT' && !e.repeat){ const v = this.sys && this.sys.vendor; if(v && P.root.position.distanceTo(v.pos) <= 9) this.sys.vendorBuy(P, 1); else if(this.fx2){ const k = this.fx2.cycle(P); this.toast(TACTICALS[k].n + ' (' + this.fx2.count(P, k) + ')'); this.audio.play('ui', null, { vol: 0.3, rate: 1.4 }); } }
       if(e.code === 'Space' && P.alive && P.mode === 'zip'){ this.fs.detachZip(P, true); return; }
       if(e.code === 'Space' && P.alive && P.mode === 'ground' && !e.repeat) P.requestJump();
       if(e.code.startsWith('Digit')){ const n = +e.code.slice(5); if(n >= 1 && n <= 5){ if(this.build.on) this.setBuild(false); P.equip(n - 1); } }
@@ -181,7 +161,7 @@ export class Match {
       else {
         if(e.code === 'KeyR') P.reload();
         if(e.code === 'KeyC' || e.code === 'ControlLeft'){ if(!(P.sprint && P.startSlide())) P.crouch = !P.crouch; }
-        if(e.code === 'KeyX' && !e.repeat && P.alive){ if(!this.fs.throwGrenade(P, this.aimDir || new THREE.Vector3(Math.sin(P.yaw), 0, Math.cos(P.yaw)))) { if(P.grenades <= 0) this.toast('Sem granadas'); } }
+        if(e.code === 'KeyX' && !e.repeat && P.alive){ const k = P.tacSel || 'granada'; if(!this.fx2.use(P, this.aimDir || new THREE.Vector3(Math.sin(P.yaw), 0, Math.cos(P.yaw)))) { if(this.fx2.count(P, k) <= 0) this.toast('Sem ' + TACTICALS[k].n + ' — T para trocar'); } }
         if(e.code === 'KeyZ' && !e.repeat && P.alive){ if(!this.fs.useRift(P)) { if(P.rifts <= 0) this.toast('Sem Fenda Portátil'); } else this.toast('FENDA! Abre o planador para descer'); }
       }
       if(e.code === 'KeyY' && !e.repeat) this.editAim();
@@ -241,6 +221,8 @@ export class Match {
     ['wind', 'rain'].forEach(id => { const h = this.audio.loops[id]; if(h){ h.stop(); delete this.audio.loops[id]; } });
     if(this.sys) this.sys.dispose();
     if(this.fs) this.fs.dispose();
+    if(this.fx2) this.fx2.dispose();
+    const qt = $('quest-tracker'); if(qt) qt.innerHTML = '';
     if(this.net) this.net.dispose();
     const gc = document.getElementById('game-chat'); if(gc){ gc.classList.remove('on', 'typing'); gc.querySelector('.log').innerHTML = ''; }
     this.scene.traverse(o => { if(o.geometry) o.geometry.dispose(); });
@@ -388,6 +370,7 @@ export class Match {
     const pl = this._placement(actor, piece, yaw);
     if(this.structures.some(s => s.alive && s.piece === piece && s.mesh.position.distanceTo(pl.pos) < 1 && (piece !== 'wall' || Math.abs(Math.cos(s.q - pl.q)) > 0.9))) return null;
     actor.mats[kind] -= 10;
+    if(actor.isPlayer) this.quest('build');
     const S = this.makeStructure(piece, pl.pos, pl.q, actor, false, kind);
     if(this.net) this.net.sendBuild(S, actor);
     this.particles.emit('build', pl.pos);
@@ -431,6 +414,7 @@ export class Match {
     S.mesh.rotation.y = S.q + (S.piece === 'ramp' && S.edit === 'flip' ? Math.PI : 0);
     this._structBoxes(S);
     this.particles.emit('build', S.mesh.position, { n: 6 });
+    if(!fromNet && S.owner && S.owner.isPlayer) this.quest('edit');
     this.audio.play('ui', S.mesh.position, { vol: 0.6, rate: 0.8 });
     if(this.net && !fromNet && this.net.sendEdit) this.net.sendEdit(S);
     return true;
@@ -554,7 +538,7 @@ export class Match {
         victim.takeDamage(dmg, shooter, isHead);
         anyHit = true; head = head || isHead;
         this.particles.emit('impact', h.point, { n: 5, color: 0xff5a5a, dust: 0xaa3333 });
-        if(shooter.isPlayer){ this.stats.dmg += dmg; this._damageNumber(h.point, dmg, isHead, victim.shield > 0); }
+        if(shooter.isPlayer){ this.stats.dmg += dmg; this._damageNumber(h.point, dmg, isHead, victim.shield > 0); this.quest('damage', dmg); }
         if(victim.isPlayer) this._hurtFx(shooter);
         if(victim.brain) victim.brain.hear(shooter.root.position);
       } else if(obj.userData.structure){ this.damageStructure(obj.userData.structure, st.dmg * 0.5, h.point); }
@@ -595,7 +579,7 @@ export class Match {
       if(r && this.sys && !r.destroyed){ r.amount *= this.sys.weakHit(actor, obj, h.instanceId, h.point, d); }
       else if(r && this.sys && this.sys.weak) this.sys.weak.sp.visible = false;
       this.audio.play('pickHit', h.point, { vol: 0.8, rate: r && r.kind === 'stone' ? 1.3 : 1 });
-      if(r){ actor.mats[r.kind] = (actor.mats[r.kind] || 0) + r.amount; if(actor.isPlayer && r.amount > 0){ this._floatText(h.point, '+' + r.amount + ({ wood: ' madeira', stone: ' pedra', metal: ' metal' })[r.kind]); this._hitmarker(false); } }
+      if(r){ actor.mats[r.kind] = (actor.mats[r.kind] || 0) + r.amount; if(actor.isPlayer && r.amount > 0){ this.quest('harvest', r.amount); this._floatText(h.point, '+' + r.amount + ({ wood: ' madeira', stone: ' pedra', metal: ' metal' })[r.kind]); this._hitmarker(false); } }
       else this.particles.emit('impact', h.point, { n: 5 });
     }
     if(actor.isPlayer) this.tps.addTrauma(0.1);
@@ -612,7 +596,7 @@ export class Match {
     if(killer){ killer.kills++; if(this.sys) this.sys.addGold(killer, 50 + Math.floor((victim.gold || 0) / 2), victim.root.position); }
     if(killer && killer.brain && Math.random() < 0.6) setTimeout(() => { if(killer.alive && !killer.brain.target) killer.anim.play(['danceDefault', 'celebrate', 'laugh', 'hype'][Math.floor(Math.random() * 4)]); }, 700);
     this._killfeed(killer, victim);
-    if(killer && killer.isPlayer && !this.isAlly(killer, victim)){ this.toast('ELIMINOU ' + victim.name.toUpperCase(), 'kill'); this.tps.addTrauma(0.15); }
+    if(killer && killer.isPlayer && !this.isAlly(killer, victim)){ this.toast('ELIMINOU ' + victim.name.toUpperCase(), 'kill'); this.tps.addTrauma(0.15); this.quest('kill'); }
     const M = this.mode;
     if(M.respawn || this.modeId === 'duel'){
       // modos com renascimento: sem loot de armas (evita acumular), só munição/escudo
@@ -628,6 +612,7 @@ export class Match {
     this.world.spawnPickup('ammo', victim.root.position.clone().add(new THREE.Vector3(2, 0, -2)), 30, vy);
     ['wood', 'stone', 'metal'].forEach((k, i) => { if(victim.mats[k] > 0) this.world.spawnPickup(k, victim.root.position.clone().add(new THREE.Vector3(-2 - i * 1.6, 0, -2)), victim.mats[k], vy); });
     if(victim.grenades > 0) this.world.spawnPickup('grenade', victim.root.position.clone().add(new THREE.Vector3(0, 0, 3)), victim.grenades, vy);
+    ['impulso', 'escudo', 'fumo', 'arbusto'].forEach((k, i) => { if(victim.tac && victim.tac[k] > 0) this.world.spawnPickup(k, victim.root.position.clone().add(new THREE.Vector3(-3 + i * 2, 0, 4)), victim.tac[k], vy); });
     setTimeout(() => { victim.root.visible = false; }, 1600);
     const target = M.killTarget || KILLS_TO_WIN;
     if(victim.isPlayer) setTimeout(() => this.endMatch(false, killer), 1800);
@@ -636,6 +621,7 @@ export class Match {
   // ---------------- interação ----------------
   interact(){
     const P = this.player;
+    if(this.fx2 && this.fx2.interact(P)) return;
     if(this.fs && this.fs.interact(P)) return;
     if(this.sys && this.sys.interact(P)) return;
     const c = this.world.chests.find(c => !c.opened && c.pos.distanceTo(P.root.position) < 7);
@@ -647,6 +633,7 @@ export class Match {
   openChestBy(actor, c){
     if(!this.world.openChest(c)) return;
     if(this.net) this.net.sendChest(c);
+    if(actor.isPlayer) this.quest('chest');
     this.audio.play('chest', c.pos, { vol: 0.9 });
     if(this.sys) this.sys.addGold(actor, 30 + Math.floor(Math.random() * 4) * 10, c.pos);
     // v16: tabela de loot com raridades + granadas/fenda
@@ -656,7 +643,7 @@ export class Match {
     const yy = { y: c.pos.y + 1.5 };
     if(actor.isPlayer){
       this.world.spawnPickup(w, spawnAt(-0.6), 1, { ...yy, rar }); this.world.spawnPickup('ammo', spawnAt(0), 30, yy);
-      const r = Math.random(); this.world.spawnPickup(r < 0.4 ? 'potion' : r < 0.65 ? 'medkit' : r < 0.9 ? 'grenade' : 'rift', spawnAt(0.6), r >= 0.65 && r < 0.9 ? 2 : 1, yy);
+      const r = Math.random(); this.world.spawnPickup(r < 0.32 ? 'potion' : r < 0.52 ? 'medkit' : r < 0.7 ? 'grenade' : r < 0.93 ? ['impulso', 'escudo', 'fumo', 'arbusto'][Math.floor(Math.random() * 4)] : 'rift', spawnAt(0.6), r >= 0.52 && r < 0.93 ? 2 : 1, yy);
       actor.mats.wood += 30;
     } else { actor.give(w, rar); actor.potions++; if(Math.random() < 0.4) actor.grenades++; if(actor.slot === 0) actor.equip(actor.slots.indexOf(w)); }
   }
@@ -665,6 +652,7 @@ export class Match {
     if(WEAPON_STATS[t]){ const idx = actor.give(t, pk.rar || 0); if(actor.isPlayer) { actor.equip(idx); this.toast(WEAPON_STATS[t].name + ' ' + RARITY[pk.rar || 0].label.toLowerCase() + ' coletado'); } }
     else if(t === 'ammo'){ GUNS.forEach(k => actor.reserve[k] = (actor.reserve[k] || 0) + ({ rifle: 30, shotgun: 6, sniper: 3, smg: 36, pistol: 16 })[k]); if(actor.isPlayer) this.toast('Munição +'); }
     else if(t === 'grenade'){ actor.grenades += pk.amount || 1; if(actor.isPlayer) this.toast('Granadas +' + (pk.amount || 1) + ' (X para lançar)'); }
+    else if(TACTICALS[t] && actor.tac){ actor.tac[t] += pk.amount || 1; if(actor.isPlayer){ if(!(actor.tac[actor.tacSel] > 0)) actor.tacSel = t; this.toast(TACTICALS[t].n + ' +' + (pk.amount || 1) + ' (T troca, X usa)'); } }
     else if(t === 'rift'){ actor.rifts += 1; if(actor.isPlayer) this.toast('Fenda Portátil (Z para usar)'); }
     else if(t === 'metal'){ actor.mats.metal += pk.amount; }
     else if(t === 'potion' || t === 'shield'){ actor.potions++; if(actor.isPlayer) this.toast('Poção de escudo'); }
@@ -731,6 +719,7 @@ export class Match {
     }
     if(this.sys) this.sys.update(dt);
     if(this.fs) this.fs.update(dt);
+    if(this.fx2) this.fx2.update(dt);
     this.rules.update(dt);
     if(this.creative) this.creative.update(dt);
     // mira: ponto sob a mira (raycast do centro da câmera) → o personagem aponta para lá, a mira nunca fica sobre ele
@@ -814,6 +803,7 @@ export class Match {
   _hud(on){
     $('hud').classList.toggle('hide', !on); $('crosshair').classList.toggle('hide', !on);
     if(on){
+      this._questHUD();
       this._updateSlotsUI();
       const lab = { 0: 'N', 45: 'NE', 90: 'L', 135: 'SE', 180: 'S', 225: 'SO', 270: 'O', 315: 'NO' };
       let h = '';
@@ -841,7 +831,9 @@ export class Match {
     _sty('hp-fill', 'width', P.hp + '%'); _txt('hp-num', Math.ceil(P.hp));
     _sty('sh-fill', 'width', P.shield + '%'); _txt('sh-num', Math.ceil(P.shield));
     _txt('wood-count', P.mats.wood); _txt('stone-count', P.mats.stone); _txt('metal-count', P.mats.metal || 0);
-    _txt('grenade-count', P.grenades || 0); _txt('rift-count', P.rifts || 0);
+    const tk = P.tacSel || 'granada'; _txt('grenade-count', (this.fx2 ? this.fx2.count(P, tk) : P.grenades) || 0); _txt('rift-count', P.rifts || 0);
+    const ge = $('tac-name'); if(ge && ge._k !== tk){ ge._k = tk; ge.textContent = TACTICALS[tk].n; const gi = document.querySelector('.m.gren'); if(gi) gi.dataset.k = tk; }
+    if(this.app.quests && this.app.quests._dirty){ this.app.quests._dirty = false; this._questHUD(); }
     _txt('potion-count', P.potions); _txt('medkit-count', P.medkits);
     const st = P.stats;
     _txt('ammo', st && st.mag ? `${P.mag[P.weaponType] ?? 0} / ${P.reserve[P.weaponType] ?? 0}` : '∞');
@@ -872,9 +864,9 @@ export class Match {
     const pk = !c && W.pickups.find(p => p.pos.distanceTo(P.root.position) < 5 && !['ammo', 'wood', 'stone', 'metal'].includes(p.type));
     const hint = $('interact-hint');
     const drop = this.sys && this.sys.drops.find(d => d.landed && !d.opened && d.pos.distanceTo(P.root.position) < 6);
-    const fh = !c && !pk && !drop && this.fs ? this.fs.hint(P) : null;
+    const fh = !c && !pk && !drop && this.fs ? ((this.fx2 && this.fx2.hint(P)) || this.fs.hint(P)) : null;
     hint.classList.toggle('show', !!(c || pk || drop || fh));
-    const hh = fh ? fh : drop ? '<kbd>E</kbd> Abrir entrega aérea' : c ? '<kbd>E</kbd> Abrir baú' : pk ? `<kbd>E</kbd> Pegar ${WEAPON_STATS[pk.type] ? `<b style="color:#${RARITY[pk.rar || 0].color.toString(16).padStart(6, '0')}">${WEAPON_STATS[pk.type].name} (${RARITY[pk.rar || 0].label})</b>` : ({ medkit: 'kit médico', grenade: 'granadas', rift: 'Fenda Portátil' })[pk.type] || 'poção de escudo'}` : null;
+    const hh = fh ? fh : drop ? '<kbd>E</kbd> Abrir entrega aérea' : c ? '<kbd>E</kbd> Abrir baú' : pk ? `<kbd>E</kbd> Pegar ${WEAPON_STATS[pk.type] ? `<b style="color:#${RARITY[pk.rar || 0].color.toString(16).padStart(6, '0')}">${WEAPON_STATS[pk.type].name} (${RARITY[pk.rar || 0].label})</b>` : ({ medkit: 'kit médico', grenade: 'granadas', rift: 'Fenda Portátil', impulso: 'Granada de Impulso', escudo: 'Splash de Escudo', fumo: 'Granada de Fumo', arbusto: 'Arbusto' })[pk.type] || 'poção de escudo'}` : null;
     if(hh && hint._h !== hh){ hint._h = hh; hint.innerHTML = hh; }
     // bússola
     const deg = ((-this.tps.yaw * 180 / Math.PI) % 360 + 360 + 180) % 360;
@@ -911,6 +903,19 @@ export class Match {
     const px = tx(P.root.position.x), pz = tz(P.root.position.z);
     ctx.save(); ctx.translate(px, pz); ctx.rotate(-this.tps.yaw + Math.PI);
     ctx.fillStyle = '#fbbf24'; ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(0, 3); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  // v17: missões — evento → progresso (App.quests) e rastreador no HUD
+  quest(kind, n){ if(this.creative || !this.app.quests || this.phase === 'over') return; if(this.net && !this.player) return; this.app.quests.add(kind, n || 1, this); }
+  questDone(q){
+    this.toast('MISSÃO CONCLUÍDA: ' + q.t + ' · +' + q.xp + ' XP', 'kill');
+    this.audio.play('chest', null, { vol: 0.7, rate: 1.3 });
+    if(this.player) this.particles.emit('confetti', this.player.root.position.clone().setY(this.player.root.position.y + 8), { n: 30 });
+    this._questHUD();
+  }
+  _questHUD(){
+    const el = $('quest-tracker'); if(!el || !this.app.quests) return;
+    const Q = this.app.quests;
+    el.innerHTML = '<h6>MISSÕES</h6>' + Q.daily().map(q => { const p = Q.prog(q), d = Q.isDone(q); return `<div class="qt ${d ? 'done' : ''}"><span>${q.t}</span><b>${d ? '✓' : p + '/' + q.n}</b><i style="width:${Math.round(p / q.n * 100)}%"></i></div>`; }).join('');
   }
   _minimapBase(){
     const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;

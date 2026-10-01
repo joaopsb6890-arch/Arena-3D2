@@ -33,7 +33,10 @@ export class BotBrain {
       // campo de visão 200°
       _v.subVectors(o.root.position, a.root.position); const ang = Math.abs(wrapA(Math.atan2(_v.x, _v.z) - a.yaw));
       if(ang > 1.75 && d > 25 && o !== a.lastHitBy) continue;
+      // v17: arbusto (disfarce) e fumo escondem o alvo
+      if(o.bush && d > 14 && o !== a.lastHitBy) continue;
       if(!this.g.physics.lineClear(_v2.copy(a.root.position).setY(a.root.position.y + 6), _v.copy(o.root.position).setY(o.root.position.y + 5))) continue;
+      if(this.g.fx2 && this.g.fx2.smokes.length && this.g.fx2.smokeBlocks(_v2, _v)) continue;
       list.push({ o, d });
     }
     list.sort((x, y) => x.d - y.d);

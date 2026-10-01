@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Mat } from '../engine/materials.js';
-import { getSurface } from '../engine/textures.js';
+import { getSurface, getTerrainLayers } from '../engine/textures.js';
 import { Wind } from '../anim/secondary.js';
 import { planPOIs, buildPOIs, ZONES, ROADS, LOCATIONS, palmGeo, cactusGeo, bushGeo, flowerGeo } from './pois.js';
 import { createWeapon, RARITY, GUNS, rollRarity } from './weapons.js';
@@ -148,7 +148,8 @@ export class World {
   _ground(){
     const seg = this.q === 'baixa' ? 150 : this.q === 'media' ? 220 : 280;
     const g = new THREE.PlaneGeometry(MAP_R * 2.4, MAP_R * 2.4, seg, seg); g.rotateX(-Math.PI / 2);
-    const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
+    const pos = g.attributes.position, col = new Float32Array(pos.count * 3), spl = new Float32Array(pos.count * 4);
+    const SS = THREE.MathUtils.smoothstep, addW = (i, ch, w) => { spl[i * 4 + ch] = Math.max(spl[i * 4 + ch], w); };
     const cA = new THREE.Color(0x5f8f3e), cB = new THREE.Color(0x7aa04a), cDirt = new THREE.Color(0x8a7550), cSand = new THREE.Color(0xcdb98a);
     const cDes = new THREE.Color(0xe0c48c), cSnow = new THREE.Color(0xf1f5f9), cBed = new THREE.Color(0x7c6f55), cRoad = new THREE.Color(0x9a8260), cPave = new THREE.Color(0x6b6f76);
     for(let i = 0; i < pos.count; i++){
@@ -156,16 +157,16 @@ export class World {
       const n = Math.sin(x * 0.05) * Math.cos(z * 0.043) * 0.5 + 0.5;
       const c = cA.clone().lerp(cB, n);
       const d = Math.hypot(x, z);
-      if(d > MAP_R - 40) c.lerp(cSand, THREE.MathUtils.smoothstep(d, MAP_R - 40, MAP_R - 15));
-      for(const hp of this.housePlan){ const dd = Math.hypot(x - hp.x, z - hp.z); if(dd < 30) c.lerp(cDirt, (1 - dd / 30) * 0.5); }
-      const lake = Math.hypot(x + 60, z + 40); if(lake < 34) c.lerp(cSand, THREE.MathUtils.smoothstep(34 - lake, 0, 8));
+      if(d > MAP_R - 40){ const w = SS(d, MAP_R - 40, MAP_R - 15); c.lerp(cSand, w); addW(i, 0, w); }
+      for(const hp of this.housePlan){ const dd = Math.hypot(x - hp.x, z - hp.z); if(dd < 30){ c.lerp(cDirt, (1 - dd / 30) * 0.5); addW(i, 3, (1 - dd / 30) * 0.8); } }
+      const lake = Math.hypot(x + 60, z + 40); if(lake < 34){ const w = SS(34 - lake, 0, 8); c.lerp(cSand, w); addW(i, 0, w); }
       if(!this.empty){
         // v16: biomas
-        const dD = Math.hypot(x - DESERT.x, z - DESERT.z); if(dD < DESERT.r + 20) c.lerp(cDes, THREE.MathUtils.smoothstep(DESERT.r + 20 - dD, 0, 35));
-        if(h > 34) c.lerp(cSnow, THREE.MathUtils.smoothstep(h, 34, 46));
-        const rd = riverDist(x, z); if(rd < 16) c.lerp(rd < 9 ? cBed : cSand, THREE.MathUtils.smoothstep(16 - rd, 0, 5) * 0.85);
-        for(const r of ROADS){ const dx = r[2] - r[0], dz = r[3] - r[1], t = Math.max(0, Math.min(1, ((x - r[0]) * dx + (z - r[1]) * dz) / (dx * dx + dz * dz))); const dr = Math.hypot(x - r[0] - dx * t, z - r[1] - dz * t); if(dr < 6) c.lerp(cRoad, (1 - dr / 6) * 0.7); }
-        for(const Z of ZONES){ if(x > Z[0] - 4 && x < Z[2] + 4 && z > Z[1] - 4 && z < Z[3] + 4 && Z !== ZONES[3] && Z !== ZONES[4]) c.lerp(cPave, 0.8); }
+        const dD = Math.hypot(x - DESERT.x, z - DESERT.z); if(dD < DESERT.r + 20){ const w = SS(DESERT.r + 20 - dD, 0, 35); c.lerp(cDes, w); addW(i, 0, w); }
+        if(h > 34){ const w = SS(h, 34, 46); c.lerp(cSnow, w); addW(i, 2, w); }
+        const rd = riverDist(x, z); if(rd < 16){ const w = SS(16 - rd, 0, 5) * 0.85; c.lerp(rd < 9 ? cBed : cSand, w); addW(i, rd < 9 ? 3 : 0, w); }
+        for(const r of ROADS){ const dx = r[2] - r[0], dz = r[3] - r[1], t = Math.max(0, Math.min(1, ((x - r[0]) * dx + (z - r[1]) * dz) / (dx * dx + dz * dz))); const dr = Math.hypot(x - r[0] - dx * t, z - r[1] - dz * t); if(dr < 6){ c.lerp(cRoad, (1 - dr / 6) * 0.7); addW(i, 3, Math.min(1, (1 - dr / 6) * 1.3)); } }
+        for(const Z of ZONES){ if(x > Z[0] - 4 && x < Z[2] + 4 && z > Z[1] - 4 && z < Z[3] + 4 && Z !== ZONES[3] && Z !== ZONES[4]){ c.lerp(cPave, 0.8); addW(i, 1, 0.9); } }
       }
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
@@ -178,13 +179,39 @@ export class World {
       const gm = vn(x * 0.012, z * 0.012) * 0.65 + vn(x * 0.05, z * 0.05) * 0.35, k = 0.84 + gm * 0.28;
       tmp.setRGB(col[i * 3] * k, col[i * 3 + 1] * k, col[i * 3 + 2] * k);
       const dry = THREE.MathUtils.smoothstep(vn(x * 0.021 + 7, z * 0.021 + 7), 0.55, 0.9) * 0.4; tmp.r *= 1 + 0.18 * dry; tmp.g *= 1 + 0.06 * dry; tmp.b *= 1 - 0.28 * dry;
-      tmp.lerp(cRock, THREE.MathUtils.smoothstep(0.93 - nrm.getY(i), 0, 0.15) * 0.7);
+      const rk = THREE.MathUtils.smoothstep(0.93 - nrm.getY(i), 0, 0.15); tmp.lerp(cRock, rk * 0.7); addW(i, 1, rk);
       col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('splat', new THREE.BufferAttribute(spl, 4));
     const s = getSurface('ground');
     const rep = (t) => { const c = t.clone(); c.repeat.set(90, 90); c.needsUpdate = true; return c; };
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, normalMap: rep(s.normalMap), roughnessMap: rep(s.roughnessMap), map: rep(s.detailMap), normalScale: new THREE.Vector2(1.2, 1.2) });
+    // v17: terreno com 5 camadas de textura (relva, areia, rocha, neve, terra) misturadas por pesos por vértice,
+    // amostragem dupla em escalas diferentes (sem padrão repetido visível), rocha projetada nas encostas,
+    // transição por "altura" da textura (bordas naturais) e esbatimento à distância (sem cintilação).
+    const L = getTerrainLayers(this.q === 'baixa' ? 256 : 512);
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, normalMap: rep(s.normalMap), roughnessMap: rep(s.roughnessMap), normalScale: new THREE.Vector2(0.9, 0.9) });
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, { tG: { value: L.grass }, tS: { value: L.sand }, tR: { value: L.rock }, tN: { value: L.snow }, tD: { value: L.dirt } });
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 splat; varying vec4 vSpl; varying vec3 vTW; varying vec3 vTN;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvSpl = splat; vTW = (modelMatrix * vec4(transformed, 1.0)).xyz; vTN = normal;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tG, tS, tR, tN, tD; varying vec4 vSpl; varying vec3 vTW; varying vec3 vTN;\nvec3 dual(sampler2D t, vec2 p){ vec2 q = mat2(0.8, -0.6, 0.6, 0.8) * p * 0.27 + 0.31; return mix(texture2D(t, p).rgb, texture2D(t, q).rgb, 0.38); }')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          vec2 p = vTW.xz * 0.16;
+          vec3 cg = dual(tG, p), cs = dual(tS, p * 0.8), cn = dual(tN, p * 0.6), cd = dual(tD, p * 1.1);
+          vec3 an = abs(normalize(vTN)); vec3 cr = texture2D(tR, vTW.xz * 0.09).rgb * an.y + texture2D(tR, vTW.zy * 0.09).rgb * an.x + texture2D(tR, vTW.xy * 0.09).rgb * an.z; cr /= (an.x + an.y + an.z);
+          vec4 w = clamp(vSpl, 0.0, 1.0);
+          // transição pela luminância da textura (a areia "enche" os vales da relva primeiro, etc.)
+          float hg = dot(cg, vec3(0.33));
+          w = clamp(w + (vec4(dot(cs, vec3(.33)), dot(cr, vec3(.33)), dot(cn, vec3(.33)), dot(cd, vec3(.33))) - hg) * 2.5 * w * (1.0 - w) * 4.0, 0.0, 1.0);
+          w = smoothstep(0.15, 0.85, w);
+          vec3 lay = cg;
+          lay = mix(lay, cd, w.w); lay = mix(lay, cs, w.x); lay = mix(lay, cr, w.y); lay = mix(lay, cn, w.z);
+          float fd = smoothstep(70.0, 320.0, distance(vTW, cameraPosition));
+          lay = mix(lay, vec3(0.5), fd * 0.7);
+          diffuseColor.rgb *= lay * 2.0;`);
+    };
+    m.customProgramCacheKey = () => 'terrain_v17';
     this.ground = new THREE.Mesh(g, m); this.ground.receiveShadow = true; this.ground.name = 'ground';
     this.group.add(this.ground); this.raycastTargets.push(this.ground);
     // oceano
@@ -706,7 +733,7 @@ export class World {
   spawnPickup(type, pos, amount, opts){
     opts = opts || {};
     const g = new THREE.Group();
-    const colors = { ammo: 0x94a3b8, shield: 0x3b82f6, potion: 0x3b82f6, medkit: 0xef4444, wood: 0xa16207, stone: 0x9ca3af, metal: 0x64748b, grenade: 0x65a30d, rift: 0xa855f7 };
+    const colors = { ammo: 0x94a3b8, shield: 0x3b82f6, potion: 0x3b82f6, medkit: 0xef4444, wood: 0xa16207, stone: 0x9ca3af, metal: 0x64748b, grenade: 0x65a30d, rift: 0xa855f7, impulso: 0x3b82f6, escudo: 0x38bdf8, fumo: 0x9ca3af, arbusto: 0x4ade80 };
     const isGun = GUNS.includes(type), rar = isGun ? (opts.rar ?? 0) : -1;
     const c = isGun ? RARITY[rar].color : (colors[type] || 0xffffff);
     let mesh;
@@ -719,6 +746,10 @@ export class World {
       mesh = this._gunCache[type].clone(); mesh.scale.multiplyScalar(1.5); mesh.rotation.set(0, 0, 0.25);
     }
     else if(type === 'grenade'){ mesh = new THREE.Mesh(new THREE.SphereGeometry(0.55, 14, 10), Mat.paint(0x4d7c0f)); const pin = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 12), Mat.metal(0xd1d5db, 0.3)); pin.position.y = 0.65; g.add(pin); }
+    else if(type === 'impulso'){ mesh = new THREE.Mesh(new THREE.SphereGeometry(0.55, 14, 10), Mat.paint(0x2563eb)); const rg = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.08, 6, 20), Mat.emissive(0x93c5fd, 2.5)); g.add(rg); }
+    else if(type === 'escudo'){ mesh = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 12), Mat.glass(0x38bdf8)); const ck = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.4, 8), Mat.wood(0x92400e)); ck.position.y = 0.7; g.add(ck); }
+    else if(type === 'fumo'){ mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 1.1, 14), Mat.metal(0x6b7280, 0.4)); const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.25, 10), Mat.paint(0xf5f5f4)); cap.position.y = 0.65; g.add(cap); }
+    else if(type === 'arbusto'){ mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.75, 1), Mat.cloth(0x4d7c0f, 'fabric')); }
     else if(type === 'rift'){ mesh = new THREE.Mesh(new THREE.TorusKnotGeometry(0.45, 0.16, 48, 8), Mat.emissive(0xc084fc, 2.2)); }
     else mesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.8), Mat.paint(c));
     g.add(mesh);

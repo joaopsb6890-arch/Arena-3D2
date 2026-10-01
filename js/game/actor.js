@@ -33,7 +33,7 @@ export class Actor {
     this.slot = 0;
     this.mag = {}; this.reserve = { rifle: 60, shotgun: 10, sniper: 6, smg: 60, pistol: 32 };
     this.mats = { wood: 60, stone: 30, metal: 0 }; this.potions = 1; this.medkits = 0;
-    this.rar = {}; this.grenades = 0; this.rifts = 0;      // v16: raridade por arma, granadas, fendas
+    this.rar = {}; this.tac = { granada: 0, impulso: 0, escudo: 0, fumo: 0, arbusto: 0 }; this.tacSel = 'granada'; this.bush = null; this.rifts = 0;      // v16: raridade por arma, granadas, fendas
     this.slideT = 0; this.mantleT = 0; this.coyote = 0; this.jumpBuf = 0; this.inWater = false;
     this.cooldown = 0; this.reloading = 0; this.using = 0; this.useKind = null;
     this.models = {};
@@ -109,6 +109,7 @@ export class Actor {
     }
     if((this.mag[t] || 0) <= 0){ this.game.audio.play('click', this.root.position, { vol: 0.6 }); this.cooldown = 0.25; this.reload(); return false; }
     this.mag[t]--; this.cooldown = st.cd; this.lastShotT = this.game.time;
+    if(this.bush && this.game.fx2) this.game.fx2.dropBush(this);
     this.anim.fire(t);
     const model = this.models[t];
     const muzzle = model ? model.markers.muzzle.getWorldPosition(new THREE.Vector3()) : origin.clone();
@@ -176,6 +177,7 @@ export class Actor {
   }
   takeDamage(amount, from, head){
     if(!this.alive) return 0;
+    if(this.bush && amount > 0 && this.game.fx2) this.game.fx2.dropBush(this);
     if(from && from !== this && this.game.isAlly && this.game.isAlly(from, this)) return 0;   // sem fogo amigo
     if(this.remote){
       // boneco de outro jogador: o dono aplica o dano (P2P); aqui só a reação visual
@@ -208,7 +210,8 @@ export class Actor {
     const b = this.body;
     if(this.remote){ if(g.net) g.net.step(this, dt); }
     else if(this.alive){
-      const speedBase = this.crouch ? 8 : this.sprint ? 23 : 17;
+      // v17: jogador mais rápido (andar 17→20, correr 23→28, agachado 8→10)
+      const speedBase = this.crouch ? 10 : this.sprint ? 28 : 20;
       // v16: água (lago/rio) abranda e salpica
       const wy = g.world && g.world.waterAt ? g.world.waterAt(b.pos.x, b.pos.z) : null;
       this.inWater = wy !== null && b.pos.y < wy + 0.4 && this.mode === 'ground';
@@ -233,11 +236,16 @@ export class Actor {
         // v16: deslizar (agachar a correr) — conserva o impulso e trava devagar
         if(this.slideT > 0){
           this.slideT -= dt; this.crouch = true;
-          const fr = b.grounded ? 1.6 : 0.4; b.vel.x -= b.vel.x * Math.min(1, fr * dt); b.vel.z -= b.vel.z * Math.min(1, fr * dt);
+          // v17: deslize mais rápido e mais longo, acelera nas descidas e permite curvar um pouco
+          const fr = b.grounded ? 1.05 : 0.3; b.vel.x -= b.vel.x * Math.min(1, fr * dt); b.vel.z -= b.vel.z * Math.min(1, fr * dt);
+          const dy = (this._slideY ?? b.pos.y) - b.pos.y; this._slideY = b.pos.y;
+          const hs = Math.hypot(b.vel.x, b.vel.z);
+          if(b.grounded && dy > 0.004 && hs > 0.1){ const ns = Math.min(50, hs + dy * 55); b.vel.x *= ns / hs; b.vel.z *= ns / hs; this.slideT = Math.min(1.6, this.slideT + dt * 0.9); }
+          if(l > 0.2 && hs > 0.1){ const a0 = Math.atan2(b.vel.x, b.vel.z), a1 = Math.atan2(wx, wz); let da = a1 - a0; da = Math.atan2(Math.sin(da), Math.cos(da)); const a = a0 + THREE.MathUtils.clamp(da, -1, 1) * Math.min(1, dt * 2.2), sp2 = Math.hypot(b.vel.x, b.vel.z); b.vel.x = Math.sin(a) * sp2; b.vel.z = Math.cos(a) * sp2; }
           if(Math.random() < 0.5 && b.grounded) g.particles.emit('dust', b.pos, { n: 1, power: 0.7 });
-          if(this.slideT <= 0 || Math.hypot(b.vel.x, b.vel.z) < 9){ this.slideT = 0; }
+          if(this.slideT <= 0 || Math.hypot(b.vel.x, b.vel.z) < 10){ this.slideT = 0; this._slideY = undefined; }
         } else {
-        const accel = this.flying ? 6 : b.grounded ? 12 : 4.5, fm = this.flying ? 2.2 : 1;
+        const accel = this.flying ? 6 : b.grounded ? 14 : 5, fm = this.flying ? 2.2 : 1;
         b.vel.x += (wx * speedBase * slow * fm - b.vel.x) * Math.min(1, accel * dt);
         b.vel.z += (wz * speedBase * slow * fm - b.vel.z) * Math.min(1, accel * dt);
         }
@@ -361,6 +369,9 @@ export class Actor {
     if(this.contrailKind === 'fogo') g.particles.emit('fire', p, { n: 10, size: 0.6, r: 1.2 });
     if(g.quality !== 'baixa') g.particles.flash(_v.set(p.x, p.y + 1.5, p.z), col, 4, 0.25, 14);
   }
+  // v17: 'grenades' passa a ser o contador de granadas normais dentro de tac
+  get grenades(){ return this.tac ? this.tac.granada : 0; }
+  set grenades(v){ if(this.tac) this.tac.granada = v; }
   // ----- v16: movimento -----
   requestJump(){ this.jumpBuf = 0.16; if(this.slideT > 0){ this.slideT = 0; } }
   _doJump(){
@@ -371,11 +382,12 @@ export class Actor {
   }
   startSlide(){
     const b = this.body; if(!b.grounded || this.mode !== 'ground' || this.slideT > 0) return false;
-    const sp = Math.hypot(b.vel.x, b.vel.z); if(sp < 15) return false;
-    const k = 31 / sp; b.vel.x *= k; b.vel.z *= k;
-    this.slideT = 0.95; this.crouch = true;
+    const sp = Math.hypot(b.vel.x, b.vel.z); if(sp < 14) return false;
+    const k = 40 / sp; b.vel.x *= k; b.vel.z *= k; this._slideY = b.pos.y;
+    this.slideT = 1.25; this.crouch = true;
     this.game.audio.play('woosh', this.root.position, { vol: 0.35, rate: 1.4 });
     this.game.particles.emit('dust', b.pos, { n: 6, power: 1.2 });
+    if(this.isPlayer && this.game.quest) this.game.quest('slide');
     return true;
   }
   _tryMantle(){

@@ -17,6 +17,7 @@ import { SKINS, BODY_TYPES } from './anim/skins.js';
 import { EMOTES } from './anim/clips.js';
 import { RARITY, CATS, DEFAULT_OWNED, itemInfo, dailyShop } from './game/cosmetics.js';
 import { thumb, pumpThumbs } from './game/thumbs.js';
+import { Quests } from './game/quests.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -28,6 +29,8 @@ class App {
   constructor(){
     this.settings = Object.assign({ name: 'Jogador', skin: 'default', body: 'padrao', quality: this._autoQuality(), weather: 'limpo', time: 15, sens: 1, vol: 0.8, party: true, showStats: true, pickaxe: 'padrao', glider: 'classico', contrail: 'nuvem' }, store.get('settings', {}));
     this.career = Object.assign({ matches: 0, wins: 0, kills: 0, xp: 0, vbucks: 1500 }, store.get('career', {}));
+    this.store = store;
+    this.quests = new Quests(this);
     this.owned = new Set([...DEFAULT_OWNED, ...store.get('owned', [])]);
     this.owned.add('skin:' + this.settings.skin);
     const qp = new URLSearchParams(location.search);
@@ -201,6 +204,7 @@ class App {
     this.career.vbucks = (this.career.vbucks || 0) + vb; this.lastReward = vb;
     this.career.matches++; if(r.win) this.career.wins++; this.career.kills += r.kills;
     this.career.xp += 120 + r.kills * 60 + (r.win ? 600 : 0);
+    if(r.win) this.quests.add('win', 1);
     store.set('career', this.career);
   }
   update(dt){
@@ -215,7 +219,17 @@ class App {
     el.classList.toggle('hide', !this.settings.showStats);
     el.innerHTML = `<b class="${s.fps >= 55 ? 'ok' : s.fps >= 40 ? 'mid' : 'bad'}">${s.fps.toFixed(0)} FPS</b><span>${s.ms.toFixed(1)} ms</span><span>${s.calls} draws</span><span>${(s.tris / 1000).toFixed(0)}k tris</span><span>${QUALITY[this.qualityName].label} · ${s.pr.toFixed(2)}x</span>`;
   }
+  // v17: missões diárias (card do lobby) + desafios da temporada (painel DESAFIOS) com progresso real
+  _questsUI(){
+    const Q = this.quests, row = (q, name, desc) => { const p = Q.prog(q), done = Q.isDone(q); return `<li class="${done ? 'done' : ''}"><b>${name}</b><span>${desc}</span><em>${done ? 'CONCLUÍDA' : p + ' / ' + q.n} · +${q.xp} XP</em><i style="--p:${Math.round(p / q.n * 100)}%"></i></li>`; };
+    const d = $('daily-quests'); if(d) d.innerHTML = Q.daily().map(q => row(q, q.t, '')).join('');
+    const ch = document.querySelector('#panel-challenges .ch-list');
+    if(ch) ch.innerHTML = '<li class="hdr">MISSÕES DIÁRIAS <small>renovam à meia-noite</small></li>' + Q.daily().map(q => row(q, q.t, 'Missão diária')).join('') + '<li class="hdr">DESAFIOS DA TEMPORADA</li>' + Q.season().map(q => row(q, q.t, q.d)).join('');
+    const c = this.career, lvl = 1 + Math.floor(c.xp / 1000), bp = $('bp-card');
+    if(bp) bp.innerHTML = `<div class="bp-l"><b>${lvl}</b><span>NÍVEL</span></div><div class="bp-r"><strong>PASSE DE BATALHA</strong><div class="bp-bar"><i style="width:${(c.xp % 1000) / 10}%"></i></div><small>${c.xp % 1000} / 1000 XP · próx.: ${['200 V-Bucks', 'Planador', 'Emote', 'Picareta', 'Rastro'][lvl % 5]}</small></div>`;
+  }
   _careerUI(){
+    this._questsUI();
     const c = this.career, lvl = 1 + Math.floor(c.xp / 1000), p = (c.xp % 1000) / 10;
     $('lvl-num').textContent = lvl; $('xp-fill').style.width = p + '%';
     $('vb-num').textContent = (c.vbucks || 0).toLocaleString('pt-PT');
@@ -306,6 +320,7 @@ class App {
   _ui(){
     // navegação
     document.querySelectorAll('.nav-tab').forEach(t => t.addEventListener('click', () => { this.audio.play('ui', null, { vol: 0.3 }); this.go(t.dataset.go); }));
+    document.querySelectorAll('.l-link[data-go]').forEach(t => t.addEventListener('click', () => { this.audio.play('ui', null, { vol: 0.3 }); this.go(t.dataset.go); }));
     $('play-btn').addEventListener('click', () => { this.audio.play('ui', null, { vol: 0.5, rate: 0.8 }); this.startMatch(); });
     $('cine-btn').addEventListener('click', () => { const on = !this.lobby.director.active; this.lobby.cinematic(on); $('cine-btn').classList.toggle('on', on); });
     $('player-name').textContent = this.settings.name;
