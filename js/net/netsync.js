@@ -18,7 +18,7 @@ import * as THREE from 'three';
 const MODE_C = { ground: 0, freefall: 1, glide: 2 }, MODE_N = ['ground', 'freefall', 'glide'];
 const W_C = { pickaxe: 0, rifle: 1, shotgun: 2, sniper: 3, none: 4 }, W_N = ['pickaxe', 'rifle', 'shotgun', 'sniper', 'none'];
 const r1 = (v) => Math.round(v * 10) / 10, r2 = (v) => Math.round(v * 100) / 100;
-const TICK = 1 / 15;
+const TICK = 1 / 30;   // v21: 30 Hz (antes 15) → metade do atraso de envio e movimento remoto mais fiel
 
 export class NetSync {
   constructor(match, session, start){
@@ -39,10 +39,11 @@ export class NetSync {
   update(dt){
     this.t += dt; this.acc += dt;
     if(this.acc >= TICK){
-      this.acc = 0;
+      this.acc = 0; this.tick = (this.tick || 0) + 1;
       const list = [];
       for(const a of this.m.actors){
         if(!a.local) continue;
+        if(!a.isPlayer && (this.tick & 1)) continue;   // bots do anfitrião a 15 Hz (poupa rede)
         const b = a.body, f = (a.crouch ? 1 : 0) | (a.aiming ? 2 : 0) | (a.alive ? 4 : 0) | (a.onBus ? 8 : 0) | (b.grounded ? 16 : 0) | (a.sprint ? 32 : 0) | (a.root.visible ? 64 : 0) | (a.climbing ? 128 : 0) | (a.rail ? 256 : 0) | (a.kart ? 512 : 0);
         list.push([a.netId, r1(b.pos.x), r2(b.pos.y), r1(b.pos.z), r2(a.yaw), r2(a.pitch), r1(b.vel.x), r1(b.vel.y), r1(b.vel.z), MODE_C[a.mode] || 0, W_C[a.using > 0 ? 'none' : a.weaponType] ?? 0, f, Math.round(a.hp), Math.round(a.shield), r2(a.fallInput.dive), r2(a.fallInput.bank)]);
       }
@@ -59,12 +60,18 @@ export class NetSync {
   // ---------------- receção ----------------
   netState(d, peer){
     if(!d || !Array.isArray(d.a)) return;
+    // v21: o mesmo estado pode chegar por 2 caminhos (direto + reencaminhado) → fica só o primeiro
+    const lt = (this.lastT || (this.lastT = new Map())).get(peer); if(lt !== undefined && d.t <= lt) return; this.lastT.set(peer, d.t);
     for(const s of d.a){
       const a = this.byId.get(s[0]); if(!a || !a.remote || a.owner !== peer) continue;
       const n = a.net;
-      if(n.offset === undefined) n.offset = this.t - d.t;
-      n.offset += ((this.t - d.t) - n.offset) * 0.05;          // relógio do peer → o nosso
-      n.buf.push({ t: d.t + n.offset, s }); if(n.buf.length > 8) n.buf.shift();
+      // v21: relógio do peer → o nosso. Segue de perto o atraso MÍNIMO (os pacotes atrasados não empurram o offset)
+      //  e mede a variação (jitter) para escolher o atraso de interpolação mais pequeno que continua suave.
+      const off = this.t - d.t;
+      if(n.offset === undefined){ n.offset = off; n.jit = 0.02; }
+      if(off < n.offset) n.offset += (off - n.offset) * 0.5; else n.offset += (off - n.offset) * 0.02;
+      n.jit += (Math.abs(off - n.offset) - n.jit) * 0.1;
+      n.buf.push({ t: d.t + n.offset, s }); if(n.buf.length > 12) n.buf.shift();
       n.hp = s[12]; n.shield = s[13];
       a.hp = s[12]; a.shield = s[13];
       const alive = !!(s[11] & 4), onBus = !!(s[11] & 8);
@@ -75,7 +82,7 @@ export class NetSync {
   }
   _interp(a, now, dt){
     const n = a.net, buf = n.buf; if(!buf.length) return;
-    const rt = now - 0.1;   // atraso de interpolação
+    const rt = now - THREE.MathUtils.clamp(TICK * 1.6 + (n.jit || 0) * 2, 0.045, 0.14);   // v21: atraso adaptativo (antes fixo 100 ms)
     let A = buf[0], B = null;
     for(let i = 0; i < buf.length - 1; i++) if(buf[i].t <= rt && buf[i + 1].t >= rt){ A = buf[i]; B = buf[i + 1]; break; }
     if(!B){ A = buf[buf.length - 1]; }
@@ -95,7 +102,7 @@ export class NetSync {
   /** chamado pelo Actor.update de um boneco remoto (substitui a física) */
   step(a, dt){
     const n = a.net, b = a.body; if(!n.tgt) return;
-    if(b.pos.distanceTo(n.tgt) > 25) b.pos.copy(n.tgt); else b.pos.lerp(n.tgt, 1 - Math.exp(-dt * 18));
+    if(b.pos.distanceTo(n.tgt) > 25) b.pos.copy(n.tgt); else b.pos.lerp(n.tgt, 1 - Math.exp(-dt * 30));
     b.vel.copy(n.vel);
     b.grounded = !!(n.flags & 16);
     a.yaw += wrap(n.yaw - a.yaw) * (1 - Math.exp(-dt * 20)); a.pitch = n.pitch;

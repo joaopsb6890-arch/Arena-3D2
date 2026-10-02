@@ -7,6 +7,13 @@ Projeto em Three.js r160 com ES modules.
 - Depois de editar `js/`, é preciso regenerar o `index.html` com `npm i esbuild && node tools/build.mjs`.
 Parâmetros de URL: `?q=baixa|media|alta|ultra` (qualidade) e `?manual=1` (desliga o rAF, para testes automatizados via `window.__simulate(n, dt)`). A tecla F8 mostra FPS, draw calls e triângulos.
 
+## Novidades v21
+
+- Mapa grande (M) com resolução própria e nomes dos locais posicionados sem sobreposição (caixas com fundo, quebra em 2 linhas quando preciso).
+- Quadriciclo refeito: modelo novo (guarda-lamas, santantónio, amortecedores, rodas com tacos, faróis e luzes traseiras), rodas da frente viram, suspensão e inclinação da carroçaria, alinhamento ao terreno, derrapagem com SHIFT que carrega um mini-turbo, nitro com F, velocímetro, câmara mais afastada e campo de visão dinâmico.
+- Otimização: o vidro com transmissão obrigava a desenhar a cena opaca duas vezes; fora do Ultra passa a vidro transparente simples (no teste: de 4,07 M para 2,30 M triângulos e de 1340 para 835 desenhos). Peças estáticas com o mesmo material são juntadas no arranque da partida.
+- Rede: estado enviado a 30 Hz (antes 15), atraso de interpolação adaptativo (45–140 ms, antes fixo 100 ms), relógio sincronizado pelo atraso mínimo, ligação direta entre convidados quando existe (sem passar pelo anfitrião) e indicador de ping na partida.
+
 ## Novidades v20
 
 - Otimização: oclusão ambiente só em Ultra, sombras em frames alternados também em Alta, malhas de colisão escondidas, culling a distância por qualidade, fogueiras sem luzes próprias (uma única luz segue a mais próxima), objetos apanháveis só desenhados ao perto, qualidade automática (desce um nível se o FPS cair abaixo de 34).

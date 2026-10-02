@@ -502,3 +502,12 @@ button.big{width:100%;height:54px;border:none;border-radius:8px;font:400 24px va
 .hub-form{display:flex;gap:6px;margin-top:8px}.hub-form input{flex:1;padding:10px 12px;border-radius:7px;border:1px solid var(--line);background:#0b1030;color:#fff;font:700 14px Barlow}.hub-form button{padding:0 16px;border-radius:7px;border:none;font:400 16px var(--disp);cursor:pointer}
 .invite-pop{position:fixed;right:18px;top:80px;z-index:60;background:rgba(10,14,40,.96);border:2px solid var(--yellow);border-radius:10px;padding:12px 14px;color:#fff;display:flex;flex-direction:column;gap:8px;max-width:280px;font-size:14px}
 .invite-pop div{display:flex;gap:6px}.invite-pop button{padding:6px 12px;border-radius:6px;border:none;font:400 15px var(--disp);cursor:pointer}.invite-pop .ok{background:var(--yellow);color:#111}
+
+/* v21: velocímetro do quadriciclo */
+#kart-hud{position:absolute;left:24px;bottom:96px;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.6)}
+#kart-hud.hide{display:none}
+#kart-hud .kh-sp{font:400 40px var(--disp);line-height:1}#kart-hud small{font-size:11px;font-weight:800;opacity:.8;margin-top:-2px}
+#kart-hud .kh-bar{width:160px;height:8px;border-radius:4px;background:rgba(0,0,0,.45);overflow:hidden;margin-top:4px}#kart-hud .kh-bar i{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,#a78bfa)}
+#kart-hud .kh-lab{font-size:10px;font-weight:800;letter-spacing:.08em;opacity:.75}
+#kart-hud .kh-dr{font:400 18px var(--disp);color:#38bdf8;min-height:20px}#kart-hud.turbo .kh-dr{color:#fb923c}
+#net-ping{position:absolute;right:14px;top:252px;font:800 11px Barlow;letter-spacing:.06em;padding:3px 8px;border-radius:5px;background:rgba(0,0,0,.45);color:#cbd5e1;pointer-events:none}#net-ping.good{color:#86efac}#net-ping.mid{color:#fde047}#net-ping.bad{color:#fca5a5}

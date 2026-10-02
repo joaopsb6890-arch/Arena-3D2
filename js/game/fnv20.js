@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { heightAt, MAP_R } from './world.js';
 import { Mat } from '../engine/materials.js';
 import { LOCATIONS, ROADS } from './pois.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RARITY, GUNS } from './weapons.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -24,22 +25,56 @@ const VEND_PRICE = [0, 120, 220, 340, 520];
 const GNOMES = 12;
 
 export function kartMesh(color){
-  const g = new THREE.Group();
-  const paint = Mat.paint(color || 0xf97316), dark = Mat.polymer(0x1f2937), metal = Mat.metal(0x9ca3af, 0.3), tire = Mat.polymer(0x111111);
-  const add = (geo, mat, x, y, z, rx, ry, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0); m.castShadow = true; g.add(m); return m; };
-  add(new THREE.BoxGeometry(3.4, 0.7, 5.2), paint, 0, 1.1, 0);
-  add(new THREE.BoxGeometry(2.8, 0.6, 1.6), paint, 0, 1.7, 1.9, -0.3);            // capô
-  add(new THREE.BoxGeometry(3.6, 0.35, 1.0), dark, 0, 0.95, 2.9);                 // para-choques
-  add(new THREE.BoxGeometry(1.6, 0.5, 1.6), dark, 0, 1.6, -0.5);                  // banco
-  add(new THREE.BoxGeometry(1.6, 1.4, 0.3), dark, 0, 2.2, -1.3, -0.15);
-  add(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 6), metal, 0, 2.2, 0.9, 0.9);   // coluna do volante
-  add(new THREE.TorusGeometry(0.42, 0.07, 6, 16), dark, 0, 2.55, 0.55, 0.9);
-  for(const sx of [-1, 1]) add(new THREE.CylinderGeometry(0.08, 0.08, 2.6, 6), metal, sx * 1.3, 2.4, -1.5);
-  add(new THREE.CylinderGeometry(0.08, 0.08, 2.7, 6), metal, 0, 3.7, -1.5, 0, 0, Math.PI / 2);
-  const wheels = [];
-  for(const [x, z] of [[-1.9, 1.8], [1.9, 1.8], [-1.9, -1.7], [1.9, -1.7]]){ const w = add(new THREE.CylinderGeometry(0.85, 0.85, 0.75, 16), tire, x, 0.85, z, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.4, 0.4, 0.78, 10), metal, x, 0.85, z, 0, 0, Math.PI / 2); wheels.push(w); }
-  for(const sx of [-0.9, 0.9]) add(new THREE.SphereGeometry(0.22, 8, 6), Mat.emissive(0xfff7d6, 2.2), sx, 1.25, 2.62);
-  g.userData.wheels = wheels;
+  // v21: quadriciclo refeito — chassis com carroçaria em camadas, guarda-lamas, santantónio, suspensão,
+  // rodas com aros e pneus de tacos, escape, faróis e luzes traseiras. Hierarquia: g → body (inclina) → peças; rodas à parte.
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const paint = Mat.paint(color || 0xf97316), dark = Mat.polymer(0x1f2937), metal = Mat.metal(0x9ca3af, 0.3), chrome = Mat.metal(0xe5e7eb, 0.12), tire = Mat.polymer(0x111111), seat = Mat.polymer(0x0f172a);
+  const geos = new Map();
+  const add = (geo, mat, x, y, z, rx, ry, rz, sx, sy, sz) => { geo = geo.index ? geo.toNonIndexed() : geo; for(const k of Object.keys(geo.attributes)) if(!['position', 'normal'].includes(k)) geo.deleteAttribute(k); geo.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)), new THREE.Vector3(sx || 1, sy || 1, sz || 1))); if(!geos.has(mat)) geos.set(mat, []); geos.get(mat).push(geo); };
+  const B = (w, h, d) => new THREE.BoxGeometry(w, h, d), C = (r1, r2, h, n) => new THREE.CylinderGeometry(r1, r2, h, n || 8);
+  // chassis
+  add(B(2.2, 0.35, 5.0), dark, 0, 0.95, 0);
+  add(B(2.9, 0.55, 3.0), paint, 0, 1.35, 0.2);                       // depósito / corpo central
+  add(B(2.4, 0.45, 1.3), paint, 0, 1.75, 1.3, -0.22);                // capô inclinado
+  add(B(2.0, 0.3, 0.9), dark, 0, 2.0, 0.55, -0.1);                   // painel
+  for(const sx of [-1, 1]){
+    add(B(1.15, 0.22, 2.0), paint, sx * 1.85, 1.95, 1.75, 0.18);      // guarda-lamas dianteiros
+    add(B(1.15, 0.22, 2.0), paint, sx * 1.85, 1.95, -1.75, -0.18);    // guarda-lamas traseiros
+    add(B(0.18, 0.5, 1.9), paint, sx * 2.38, 1.75, 1.75);
+    add(B(0.18, 0.5, 1.9), paint, sx * 2.38, 1.75, -1.75);
+    add(B(0.5, 0.18, 1.6), dark, sx * 1.2, 1.15, 0);                  // estribos
+    add(C(0.07, 0.07, 1.2, 6), chrome, sx * 1.3, 1.25, 1.75, 0, 0, Math.PI / 2 - sx * 0.35);   // braços de suspensão
+    add(C(0.07, 0.07, 1.2, 6), chrome, sx * 1.3, 1.25, -1.7, 0, 0, Math.PI / 2 - sx * 0.35);
+    add(C(0.12, 0.12, 0.8, 8), Mat.paint(0xfacc15), sx * 1.55, 1.55, 1.75, 0, 0, sx * 0.5);   // amortecedores
+    add(C(0.12, 0.12, 0.8, 8), Mat.paint(0xfacc15), sx * 1.55, 1.55, -1.7, 0, 0, sx * 0.5);
+    add(C(0.08, 0.08, 2.4, 6), metal, sx * 1.05, 2.75, -1.45, 0.08);  // santantónio
+    add(C(0.08, 0.08, 1.6, 6), metal, sx * 1.05, 3.6, -0.9, 1.05);
+  }
+  add(C(0.08, 0.08, 2.1, 6), metal, 0, 3.95, -1.5, 0, 0, Math.PI / 2);
+  add(C(0.08, 0.08, 2.1, 6), metal, 0, 3.95, -0.2, 0, 0, Math.PI / 2);
+  add(B(1.7, 0.45, 1.5), seat, 0, 1.85, -0.55);                       // banco
+  add(B(1.6, 1.3, 0.3), seat, 0, 2.45, -1.3, -0.18);
+  add(B(2.6, 0.4, 0.5), dark, 0, 1.05, 2.75);                         // para-choques
+  add(B(2.0, 0.1, 0.1), chrome, 0, 1.35, 2.98);
+  add(B(2.4, 0.7, 0.9), dark, 0, 1.75, -2.4);                          // porta-bagagens
+  add(C(0.13, 0.16, 1.4, 8), chrome, 1.0, 1.25, -2.6, Math.PI / 2 - 0.2); // escape
+  add(C(0.06, 0.06, 1.4, 6), metal, 0, 2.3, 0.85, 0.85);             // coluna de direção
+  add(new THREE.TorusGeometry(0.42, 0.07, 6, 16), dark, 0, 2.75, 0.55, 0.85);
+  for(const sx of [-0.85, 0.85]) add(C(0.24, 0.24, 0.12, 12), Mat.emissive(0xfff7d6, 2.4), sx, 1.75, 2.0, Math.PI / 2 - 0.2);
+  for(const sx of [-0.95, 0.95]) add(B(0.4, 0.2, 0.08), Mat.emissive(0xef4444, 2.2), sx, 1.8, -2.87);
+  for(const [mat, list] of geos){ const m = new THREE.Mesh(mergeGeometries(list), mat); m.castShadow = true; body.add(m); }
+  // rodas (cada uma: pivot de direção → roda que gira)
+  const wheels = [], steer = [];
+  const wGeo = (() => { const L = [], tg = C(0.88, 0.88, 0.8, 18).toNonIndexed(); L.push(tg); for(let k = 0; k < 12; k++){ const t = B(0.2, 0.22, 0.82).toNonIndexed(); const a = k / 12 * Math.PI * 2; t.applyMatrix4(new THREE.Matrix4().makeRotationY(a).setPosition(Math.cos(a) * 0.9, 0, Math.sin(a) * 0.9)); L.push(t); } L.forEach(x => { for(const k of Object.keys(x.attributes)) if(!['position', 'normal'].includes(k)) x.deleteAttribute(k); }); return mergeGeometries(L); })();
+  const rimGeo = C(0.45, 0.45, 0.84, 10);
+  for(const [x, z, front] of [[-1.9, 1.75, 1], [1.9, 1.75, 1], [-1.9, -1.7, 0], [1.9, -1.7, 0]]){
+    const piv = new THREE.Group(); piv.position.set(x, 0.88, z); g.add(piv);
+    const w = new THREE.Group(); w.rotation.order = 'ZYX'; w.rotation.z = Math.PI / 2; piv.add(w);
+    const tm = new THREE.Mesh(wGeo, tire); tm.castShadow = true; w.add(tm); w.add(new THREE.Mesh(rimGeo, chrome));
+    // a roda gira à volta do eixo X do mundo: como a roda está deitada (rotation.z), giramos no eixo Y local
+    wheels.push(w); if(front) steer.push(piv); piv.userData.baseY = 0.88;
+  }
+  g.userData.wheels = wheels; g.userData.steer = steer; g.userData.body = body; g.userData.pivots = wheels.map(w => w.parent);
   return g;
 }
 
@@ -174,33 +209,79 @@ export class FortV20 {
     k.driver = P; P.kart = k; P.slideT = 0; P.crouch = false;
     P.body.pos.set(k.pos.x, k.pos.y + 0.6, k.pos.z); P.root.position.copy(P.body.pos);
     this.group.remove(k.g); P.root.add(k.g); k.g.position.set(0, -0.6, 0); k.g.rotation.set(0, 0, 0);
-    k.sp = 0; this.m.toast('W/S acelerar · A/D virar · ESPAÇO saltar · E sair'); this.m.audio.play('build', P.body.pos, { vol: 0.5, rate: 0.6 });
+    k.sp = 0; k.vyaw = k.yaw; this.m.toast('W/S acelerar · A/D virar · SHIFT derrapar (turbo) · F nitro · ESPAÇO saltar · E sair'); this.m.audio.play('build', P.body.pos, { vol: 0.5, rate: 0.6 });
     if(this.m.quest) this.m.quest('drive');
   }
   exitKart(P){
     const k = P.kart; if(!k) return; P.kart = null; k.driver = null;
-    P.root.remove(k.g); this.group.add(k.g);
-    k.g.position.copy(P.body.pos).setY(this._ground(P.body.pos.x, P.body.pos.z)); k.g.rotation.set(0, k.yaw, 0); k.pos = k.g.position;
+    P.root.remove(k.g); this.group.add(k.g); this._kartHUD(null);
+    k.g.position.copy(P.body.pos).setY(this._ground(P.body.pos.x, P.body.pos.z)); k.g.rotation.set(0, k.yaw, 0); k.pos = k.g.position; k.drifting = 0; if(k.g.userData.body) k.g.userData.body.rotation.set(0, 0, 0);
     P.body.pos.x += Math.cos(k.yaw) * 3.4; P.body.pos.z -= Math.sin(k.yaw) * 3.4; P.body.pos.y += 1; P.body.vel.set(0, 0, 0);
   }
   kartStep(a, dt, mi){
-    const k = a.kart, b = a.body;
-    const actual = Math.hypot(b.vel.x, b.vel.z); if(Math.abs(k.sp) > 12 && actual < Math.abs(k.sp) * 0.35) k.sp *= 0.4;   // bateu
-    const acc = mi.y > 0.1 ? 34 : mi.y < -0.1 ? (k.sp > 0 ? -60 : -22) : 0;
-    k.sp += acc * dt; if(!acc) k.sp -= k.sp * Math.min(1, dt * 0.9);
-    k.sp = THREE.MathUtils.clamp(k.sp, -16, a.boostT > 0 ? 72 : 58);
-    const steer = -mi.x * (1.9 - Math.min(1, Math.abs(k.sp) / 60) * 0.9) * Math.sign(k.sp || 1) * Math.min(1, Math.abs(k.sp) / 6);
-    k.yaw += steer * dt;
-    b.vel.x = Math.sin(k.yaw) * k.sp; b.vel.z = Math.cos(k.yaw) * k.sp;
-    if(a.jumpHeld && b.grounded && !this._kj){ b.vel.y = 20; b.grounded = false; this.m.audio.play('jump', b.pos, { vol: 0.5, rate: 0.8 }); }
+    // v21: condução melhorada — aderência lateral (o carro desliza um pouco nas curvas), DERRAPAGEM com SHIFT
+    // que carrega um mini-turbo (azul → laranja), NITRO com F (barra que recarrega), suspensão e inclinação da carroçaria,
+    // alinhamento ao terreno, controlo no ar e câmara mais afastada.
+    const k = a.kart, b = a.body, ud = k.g.userData;
+    k.nitro = k.nitro ?? 1; k.drift = k.drift || 0; k.vyaw = k.vyaw ?? k.yaw;
+    const actual = Math.hypot(b.vel.x, b.vel.z);
+    if(Math.abs(k.sp) > 14 && actual < Math.abs(k.sp) * 0.3 && b.grounded){ k.sp *= 0.45; this.m.tps.addTrauma(0.25); this.m.audio.play('hit', b.pos, { vol: 0.5, rate: 0.6 }); }   // bateu
+    const nitro = this.m.keys && this.m.keys.KeyF && k.nitro > 0.02 && mi.y > -0.1;
+    const top = (a.boostT > 0 ? 74 : 62) + (nitro ? 22 : 0) + (k.turboT > 0 ? 14 : 0);
+    const acc = mi.y > 0.1 ? (k.sp < 20 ? 46 : 30) : mi.y < -0.1 ? (k.sp > 1 ? -75 : -26) : 0;
+    if(b.grounded){ k.sp += (acc + (nitro ? 40 : 0) + (k.turboT > 0 ? 30 : 0)) * dt; if(!acc && !nitro) k.sp -= k.sp * Math.min(1, dt * 0.8); }
+    if(nitro){ k.nitro = Math.max(0, k.nitro - dt / 3.2); if(Math.random() < 0.6) this.m.particles.emit('impact', b.pos.clone().add(new THREE.Vector3(-Math.sin(k.yaw) * 3, 1.3, -Math.cos(k.yaw) * 3)), { color: 0x60a5fa, n: 2 }); }
+    else k.nitro = Math.min(1, k.nitro + dt / 9);
+    if(k.turboT > 0) k.turboT -= dt;
+    k.sp = THREE.MathUtils.clamp(k.sp, -18, Math.max(top, Math.min(k.sp, top + 10) - dt * 20));
+    const spd = Math.abs(k.sp), dir = Math.sign(k.sp || 1);
+    // derrapagem
+    const wantDrift = a.sprint && b.grounded && spd > 24 && Math.abs(mi.x) > 0.2;
+    if(wantDrift && !k.drifting){ k.drifting = Math.sign(mi.x); k.drift = 0; b.vel.y = Math.max(b.vel.y, 5); }
+    if(k.drifting && (!a.sprint || spd < 16)){ if(k.drift > 0.8){ k.turboT = k.drift > 1.8 ? 1.4 : 0.8; this.m.audio.play('woosh', b.pos, { vol: 0.6 }); this.m.tps.kick(4); } k.drifting = 0; k.drift = 0; }
+    let steerAmt = -mi.x * (2.0 - Math.min(1, spd / 70) * 0.95) * dir * Math.min(1, spd / 5);
+    if(k.drifting){ steerAmt = (-k.drifting * 1.25 - mi.x * 0.75) * dir; k.drift += dt; const col = k.drift > 1.8 ? 0xf97316 : k.drift > 0.8 ? 0x38bdf8 : 0xe5e7eb; if(Math.random() < 0.7) for(const sx of [-1.9, 1.9]) this.m.particles.emit('impact', b.pos.clone().add(new THREE.Vector3(Math.cos(k.yaw) * sx - Math.sin(k.yaw) * 1.7, 0.3, -Math.sin(k.yaw) * sx - Math.cos(k.yaw) * 1.7)), { color: col, n: 2 }); }
+    if(!b.grounded) steerAmt *= 0.4;
+    k.yaw += steerAmt * dt;
+    // direção da velocidade segue a orientação com aderência (menor a derrapar)
+    const grip = !b.grounded ? 0.6 : k.drifting ? 2.6 : 9;
+    let dy = k.yaw - k.vyaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); k.vyaw += dy * Math.min(1, dt * grip);
+    if(b.grounded || Math.abs(b.vel.x) + Math.abs(b.vel.z) < 1){ b.vel.x = Math.sin(k.vyaw) * k.sp; b.vel.z = Math.cos(k.vyaw) * k.sp; }
+    if(a.jumpHeld && b.grounded && !this._kj){ b.vel.y = 22; b.grounded = false; this.m.audio.play('jump', b.pos, { vol: 0.5, rate: 0.8 }); }
     this._kj = a.jumpHeld;
-    for(const w of k.wheels) w.rotation.x += k.sp * dt / 0.85;
-    if(b.grounded && Math.abs(k.sp) > 25 && Math.random() < 0.5) this.m.particles.emit('dust', b.pos, { n: 1, power: 1 });
-    k._dist = (k._dist || 0) + Math.abs(k.sp) * dt; if(k._dist > 400){ k._dist = 0; if(this.m.quest) this.m.quest('drive'); }
+    // visual: rodas, direção, suspensão, inclinação, alinhamento ao terreno
+    for(const w of ud.wheels) w.rotation.y -= k.sp * dt / 0.88;
+    const steerVis = THREE.MathUtils.clamp(-mi.x * 0.45, -0.45, 0.45); for(const s of ud.steer) s.rotation.y = THREE.MathUtils.damp(s.rotation.y, steerVis, 12, dt);
+    const body = ud.body, lat = THREE.MathUtils.clamp(steerAmt * spd * 0.004, -0.14, 0.14);
+    k._acc = THREE.MathUtils.damp(k._acc || 0, (spd - (k._lsp || 0)) / Math.max(dt, 1e-3), 6, dt); k._lsp = spd;
+    body.rotation.z = THREE.MathUtils.damp(body.rotation.z, lat, 8, dt);
+    body.rotation.x = THREE.MathUtils.damp(body.rotation.x, THREE.MathUtils.clamp(-k._acc * 0.0025, -0.07, 0.07), 6, dt);
+    body.position.y = THREE.MathUtils.damp(body.position.y, b.grounded ? Math.sin(this._t * 18) * Math.min(1, spd / 60) * 0.04 : 0.15, 10, dt);
+    this._ka = (this._ka || 0) + dt;
+    if(this._ka > 0.08){ this._ka = 0; const P = b.pos, f = 2.2, sx = Math.sin(k.yaw), cz = Math.cos(k.yaw), gr = (x, z) => this.W.physics.groundAt(x, z, P.y + 3, 0);
+      const hf = gr(P.x + sx * f, P.z + cz * f), hb = gr(P.x - sx * f, P.z - cz * f), hl = gr(P.x + cz * 1.8, P.z - sx * 1.8), hr = gr(P.x - cz * 1.8, P.z + sx * 1.8);
+      k._pitch = b.grounded && Math.abs(hf - hb) < 3 ? Math.atan2(hb - hf, f * 2) : 0; k._roll = b.grounded && Math.abs(hl - hr) < 3 ? Math.atan2(hl - hr, 3.6) : 0; }
+    k.g.rotation.x = THREE.MathUtils.damp(k.g.rotation.x, b.grounded ? (k._pitch || 0) : -b.vel.y * 0.008, 8, dt);
+    k.g.rotation.z = THREE.MathUtils.damp(k.g.rotation.z, k._roll || 0, 8, dt);
+    if(b.grounded && spd > 22 && Math.random() < 0.5) this.m.particles.emit('dust', b.pos, { n: 1, power: 1 });
+    if(b.grounded && !k._wasG && (k._airT || 0) > 0.35){ this.m.tps.addTrauma(0.2); this.m.particles.emit('dust', b.pos, { n: 6, power: 2 }); if(k._airT > 1) this.m.toast('Salto de ' + k._airT.toFixed(1) + ' s'); }
+    k._airT = b.grounded ? 0 : (k._airT || 0) + dt; k._wasG = b.grounded;
+    k._dist = (k._dist || 0) + spd * dt; if(k._dist > 400){ k._dist = 0; if(this.m.quest) this.m.quest('drive'); }
+    // HUD do quadriciclo
+    this._kHud = (this._kHud || 0) - dt; if(this._kHud <= 0){ this._kHud = 0.1; this._kartHUD(k); }
     // atropelar
-    if(Math.abs(k.sp) > 26) for(const o of this.m.actors){ if(o === a || !o.alive || o.onBus || (this.m.isAlly && this.m.isAlly(a, o))) continue; if(o.root.position.distanceTo(b.pos) < 3.6 && !(o._runCd > 0)){ o._runCd = 1; o.takeDamage(35, a); if(o.body && !o.remote){ o.body.vel.x += b.vel.x * 0.7; o.body.vel.z += b.vel.z * 0.7; o.body.vel.y = 16; o.body.grounded = false; } k.sp *= 0.6; this.m.audio.play('hit', b.pos, { vol: 0.8 }); } }
+    if(spd > 26) for(const o of this.m.actors){ if(o === a || !o.alive || o.onBus || (this.m.isAlly && this.m.isAlly(a, o))) continue; if(o.root.position.distanceTo(b.pos) < 3.8 && !(o._runCd > 0)){ o._runCd = 1; o.takeDamage(Math.round(20 + spd * 0.4), a); if(o.body && !o.remote){ o.body.vel.x += b.vel.x * 0.7; o.body.vel.z += b.vel.z * 0.7; o.body.vel.y = 16; o.body.grounded = false; } k.sp *= 0.7; this.m.tps.addTrauma(0.3); this.m.audio.play('hit', b.pos, { vol: 0.8 }); } }
   }
-  // ---------------- interação ----------------
+  _kartHUD(k){
+    let el = document.getElementById('kart-hud');
+    if(!k){ if(el) el.classList.add('hide'); return; }
+    if(!el){ el = document.createElement('div'); el.id = 'kart-hud'; el.innerHTML = '<b class="kh-sp">0</b><small>km/h</small><div class="kh-bar"><i></i></div><span class="kh-lab">NITRO (F)</span><span class="kh-dr"></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
+    el.classList.remove('hide');
+    el.querySelector('.kh-sp').textContent = Math.round(Math.abs(k.sp) * 1.8);
+    el.querySelector('.kh-bar i').style.width = Math.round(k.nitro * 100) + '%';
+    el.querySelector('.kh-dr').textContent = k.drifting ? (k.drift > 1.8 ? 'TURBO MÁXIMO' : k.drift > 0.8 ? 'TURBO' : 'A DERRAPAR') : k.turboT > 0 ? 'TURBO' : '';
+    el.classList.toggle('turbo', k.turboT > 0 || (k.drifting && k.drift > 0.8));
+  }
   interact(P){
     if(P.kart){ this.exitKart(P); return true; }
     const pp = P.root.position, near = (list, d) => list.find(o => o.pos.distanceTo(pp) < d);
@@ -223,7 +304,7 @@ export class FortV20 {
     this.m.audio.play('launch', pos, { vol: 1, rate: 0.7 }); this.m.audio.play('thunder', pos, { vol: 0.25, rate: 1.6 });
   }
   hint(P){
-    if(P.kart) return '<kbd>E</kbd> Sair do quadriciclo · ' + Math.round(Math.abs(P.kart.sp) * 3.6 / 2) + ' km/h';
+    if(P.kart) return '<kbd>E</kbd> Sair do quadriciclo · ' + 'SHIFT derrapar · F nitro';
     if(this.ride) return '<kbd>ESPAÇO</kbd> Saltar do balão';
     const pp = P.root.position, near = (list, d) => list.find(o => o.pos.distanceTo(pp) < d);
     if(this.karts.some(k => !k.driver && k.pos.distanceTo(pp) < 5.5)) return '<kbd>E</kbd> Conduzir quadriciclo';

@@ -78,11 +78,14 @@ export class NetSession {
     //  quando uma dessas ligações falhava (NAT/rede), o 3.º jogador não via/ouvia o 2.º → só entravam 2.
     this.aChat.onMessage = this._relayed(this.aChat, (d, from) => { const p = this.roster.get(from); this._pushChat({ from: p ? p.name : '?', text: String(d.text || '').slice(0, 140) }); });
     this.aStart.onMessage = (d, { peerId }) => { if(peerId === this.hostId) this._onStart(d); };
-    this.aState.onMessage = this._relayed(this.aState, (d, from) => { this.stats.down++; if(this.match) this.match.netState(d, from); });
+    const relState = this._relayed(this.aState, (d, from) => { this.stats.down++; if(this.match) this.match.netState(d, from); });
+    // v21: estado também por ligação DIRETA entre convidados (quando existe) → evita o salto extra pelo anfitrião.
+    //  O mesmo pacote chega também reencaminhado; o NetSync descarta o duplicado pelo carimbo de tempo.
+    this.aState.onMessage = (d, meta) => { if(!this.isHost && d && d.dir && meta.peerId !== this.hostId && this.roster.has(meta.peerId)){ this.stats.down++; if(this.match) this.match.netState(d, meta.peerId); return; } relState(d, meta); };
     this.aEv.onMessage = this._relayed(this.aEv, (d, from) => { this.stats.down++; if(this.match) this.match.netEvent(d, from); });
     this.room.onPeerJoin = (p) => { this.aHello.send(this._helloData(), { target: p }).catch(() => {}); if(this.isHost) this._broadcastRoster(p); };
     this.room.onPeerLeave = (p) => this._onLeave(p);
-    this._pingT = setInterval(() => this._ping(), 3000);
+    this._pingT = setInterval(() => this._ping(), 2000);
     if(this.isHost) this._advertise();
   }
   /** recebe mensagens com envelope de reencaminhamento ({_r: origem} / {_to: destino}) */
@@ -183,7 +186,12 @@ export class NetSession {
   }
   _onStart(d){ this.inGame = true; this.startInfo = d; if(this.onStart) this.onStart(d); }
   endGame(){ if(this.isHost){ this.inGame = false; this._broadcastRoster(); this._advertise(); } }
-  sendState(d){ this.stats.up++; this._send(this.aState, d); }
+  sendState(d){
+    this.stats.up++; this._send(this.aState, d);
+    if(!this.isHost && this.hostId){ const peers = this.room.getPeers(), direct = this.order.filter(id => id !== selfId && id !== this.hostId && peers[id]); if(direct.length){ d.dir = 1; this.aState.send(d, { target: direct }).catch(() => {}); } }
+  }
+  /** ping médio ao anfitrião (ou o pior convidado se fores o anfitrião) */
+  pingMs(){ const v = Object.values(this.stats.pings); if(!v.length) return null; return this.isHost ? Math.max(...v) : (this.stats.pings[this.hostId] ?? Math.min(...v)); }
   ev(d, target){ this.stats.up++; this._send(this.aEv, d, target); }
   peerCount(){ return Object.keys(this.room.getPeers()).length; }
   _close(reason){ const cb = this.onClosed; this.leave(); if(cb) cb(reason); }

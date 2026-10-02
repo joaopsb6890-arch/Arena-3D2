@@ -17,7 +17,20 @@ function applyQ(m){
   const u = m.userData; if(u._sh === undefined){ u._sh = m.sheen; u._cc = m.clearcoat; }
   const low = MQ === 'baixa' || MQ === 'media';   // v20: Média também sem sheen/clearcoat
   m.sheen = low ? 0 : u._sh; m.clearcoat = low ? 0 : u._cc;
+  applyTransmission(m);
 }
+/** v21: transmissão (vidro "real") obriga o three.js a desenhar TODA a cena opaca uma 2.ª vez para uma
+ *  textura. Fora do Ultra trocamos por vidro transparente simples — visualmente quase igual, metade do custo. */
+export function applyTransmission(m){
+  if(!m || !m.isMeshPhysicalMaterial) return;
+  const u = m.userData; if(u._tr === undefined){ u._tr = m.transmission || 0; u._op = m.opacity; u._tp = m.transparent; }
+  if(!u._tr) return;
+  const on = MQ === 'ultra', was = m.transmission > 0;
+  m.transmission = on ? u._tr : 0;
+  m.transparent = on ? u._tp : true; m.opacity = on ? u._op : Math.min(u._op, 0.42); m.depthWrite = on ? true : false;
+  if(was !== on) m.needsUpdate = true;
+}
+export function materialQuality(){ return MQ; }
 export function setMaterialQuality(q){ MQ = q; all.forEach(applyQ); }
 function reg(m){ all.add(m); applyQ(m); return m; }
 export function allMaterials(){ return all; }

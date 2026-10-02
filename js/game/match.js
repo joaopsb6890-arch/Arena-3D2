@@ -16,6 +16,8 @@ import { FortSystems } from './fnsystems.js';
 import { FortExtras, TACTICALS } from './fnextra.js';
 import { FortV19 } from './fnv19.js';
 import { FortV20 } from './fnv20.js';
+import { collectRefs, mergeStatic, flattenStatic } from '../engine/optimize.js';
+import { applyTransmission } from '../engine/materials.js';
 import { makeBattleBus } from './bus.js';
 import { PICKAXES, GLIDERS } from './cosmetics.js';
 import { TPSCamera, CinematicDirector } from '../engine/camera.js';
@@ -71,6 +73,13 @@ export class Match {
     if(this.layout) this.layoutObjs = buildLayout(this, this.layout, false);
     if(this.mode.creative) this.creative = new CreativeTools(this);
     this._bindInput();
+    this._noTransmission();
+    // v21: junta peças estáticas irmãs com o mesmo material (menos chamadas de desenho)
+    try {
+      const t0 = performance.now(), prot = collectRefs([this], { skip: ['scene', 'camera', 'session', 'net'] });
+      let n = 0; for(const g of [this.world.group, this.v19 && this.v19.group, this.v20 && this.v20.group, this.fs && this.fs.group, this.fx2 && this.fx2.group]) if(g){ n += flattenStatic(g, prot, { cell: 96 }); n += mergeStatic(g, prot); }
+      this._mergeInfo = { saved: n, ms: Math.round(performance.now() - t0) };
+    } catch(e){ console.warn('mergeStatic', e); }
   }
   // ---------------- início ----------------
   start(skin, bodyType){
@@ -757,8 +766,8 @@ export class Match {
     if(this.phase === 'drop' && P.mode === 'ground'){ this.phase = 'play'; this.toast('Encontre armas nos baús — E para abrir'); }
     // câmera
     const ads = P.aiming;
-    const dist = P.mode === 'freefall' ? 20 - P.fallInput.dive * 3 : P.mode === 'glide' ? 17 : this.build.on ? 14 : 12.5;
-    this.tps.baseFov = THREE.MathUtils.damp(this.tps.baseFov, P.mode === 'freefall' ? 74 + Math.max(0, P.fallInput.dive) * 12 : P.mode === 'glide' ? 72 : 70, 3, dt);
+    const dist = P.kart ? 17 + Math.min(4, Math.abs(P.kart.sp) / 18) : P.mode === 'freefall' ? 20 - P.fallInput.dive * 3 : P.mode === 'glide' ? 17 : this.build.on ? 14 : 12.5;
+    this.tps.baseFov = THREE.MathUtils.damp(this.tps.baseFov, P.kart ? 70 + Math.min(14, Math.abs(P.kart.sp) / 6) + (P.kart.turboT > 0 ? 6 : 0) : P.mode === 'freefall' ? 74 + Math.max(0, P.fallInput.dive) * 12 : P.mode === 'glide' ? 72 : 70, 3, dt);
     if(P.mode === 'freefall' && P.fallInput.dive > 0.5) this.tps.addTrauma(0.012 * P.fallInput.dive);
     const sl = $('speed-lines'); if(sl) sl.style.opacity = P.mode === 'freefall' ? 0.25 + Math.max(0, P.fallInput.dive) * 0.6 : P.mode === 'glide' ? 0.12 : 0;
     if(this.phase === 'bus' && this.bus){
@@ -883,15 +892,46 @@ export class Match {
     const deg = ((-this.tps.yaw * 180 / Math.PI) % 360 + 360 + 180) % 360;
     _sty('compass-strip', 'transform', `translateX(${-deg * 3}px)`);
     _txt('compass-deg', Math.round(deg) + '°');
+    if(this.session){ this._pgT = (this._pgT || 0) - dt; if(this._pgT <= 0){ this._pgT = 1; let pe = $('net-ping'); if(!pe){ pe = document.createElement('div'); pe.id = 'net-ping'; $('hud').appendChild(pe); } const ms = this.session.pingMs ? this.session.pingMs() : null; pe.textContent = ms == null ? 'PING --' : 'PING ' + ms + ' ms'; pe.className = ms == null ? '' : ms < 80 ? 'good' : ms < 160 ? 'mid' : 'bad'; } }
+    this._ntT = (this._ntT || 0) - dt; if(this._ntT <= 0){ this._ntT = 4; this._noTransmission(); }
     this._mmT = (this._mmT || 0) - dt; if(this._mmT <= 0){ this._mmT = 1 / 15; this._minimap(); }   // v15: minimapa a 15 Hz
     this._blobs();
     this._nametags();
     const hpLow = P.hp < 30 && P.alive; _sty('low-hp', 'opacity', hpLow ? 0.6 + Math.sin(this.time * 6) * 0.2 : 0);
   }
+  /** v21: posiciona os nomes dos locais sem sobreposição (tenta 8 posições à volta do ponto; quebra nomes longos em 2 linhas) */
+  /** v21: desliga a transmissão em todos os materiais da cena (incl. clones e personagens) fora do Ultra */
+  _noTransmission(){ const seen = new Set(); this.scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if(ms) for(const mt of ms){ if(!seen.has(mt) && mt.isMeshPhysicalMaterial){ seen.add(mt); applyTransmission(mt); } } }); }
+  _layoutLabels(ctx, W, scale, tx, tz){
+    const fs = Math.round(W / 46), font = `800 ${fs}px system-ui, sans-serif`, lh = fs + 2; ctx.font = font;
+    const placed = [], out = [], hit = (b) => placed.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y);
+    const locs = LOCATIONS.filter(L => L.r <= 110).slice().sort((a, b) => b.r - a.r);
+    for(const L of locs){ const px = tx(L.x), pz = tz(L.z); placed.push({ x: px - 4, y: pz - 4, w: 8, h: 8 }); }
+    for(const L of locs){
+      const px = tx(L.x), pz = tz(L.z), name = L.n.toUpperCase(), words = name.split(' ');
+      const variants = [[name]]; if(words.length > 1){ const k = Math.ceil(words.length / 2); variants.push([words.slice(0, k).join(' '), words.slice(k).join(' ')]); }
+      let done = null;
+      for(const lines of variants){
+        const bw = Math.max(...lines.map(t => ctx.measureText(t).width)) + 8, bh = lines.length * lh + 8, g = 6;
+        const cands = [[-bw / 2, -bh - g], [-bw / 2, g], [g, -bh / 2], [-bw - g, -bh / 2], [g, -bh - g], [-bw - g, -bh - g], [g, g], [-bw - g, g], [-bw / 2, -bh - g * 4], [-bw / 2, g * 4]];
+        for(const [ox, oy] of cands){ const b = { x: px + ox, y: pz + oy, w: bw, h: bh }; const mg = W * 0.035; if(b.x < mg || b.y < mg || b.x + bw > W - mg || b.y + bh > W - mg) continue; if(!hit(b)){ done = { b, lines }; break; } }
+        if(done) break;
+      }
+      if(!done){ // reduz a letra como último recurso
+        const sf = `800 ${fs - 3}px system-ui, sans-serif`; ctx.font = sf; const bw = ctx.measureText(name).width + 6, bh = fs + 4; ctx.font = font;
+        for(const [ox, oy] of [[-bw / 2, -bh - 4], [-bw / 2, 4], [6, -bh / 2], [-bw - 6, -bh / 2]]){ const b = { x: px + ox, y: pz + oy, w: bw, h: bh }; if(!hit(b)){ placed.push(b); out.push({ px, pz, bx: b.x, by: b.y, bw, bh, lines: [name], font: sf, lh: fs - 3 }); break; } }
+        continue;
+      }
+      placed.push(done.b); out.push({ px, pz, bx: done.b.x, by: done.b.y, bw: done.b.w, bh: done.b.h, lines: done.lines, font, lh });
+    }
+    return out;
+  }
   _minimap(){
     const cv = $('minimap-canvas'); if(!cv) return;
-    const ctx = cv.getContext('2d'), W = cv.width, H = cv.height, P = this.player, w = this.world;
     const big = $('minimap').classList.contains('big');
+    // v21: mapa grande com resolução própria (antes: 220 px esticados → texto desfocado e amontoado)
+    const want = big ? 640 : 220; if(cv.width !== want){ cv.width = cv.height = want; this._mmLabels = null; }
+    const ctx = cv.getContext('2d'), W = cv.width, H = cv.height, P = this.player, w = this.world;
     const scale = big ? W / (MAP_R * 2.2) : W / 260;
     const cx = big ? 0 : P.root.position.x, cz = big ? 0 : P.root.position.z;
     const tx = (x) => W / 2 - (x - cx) * scale, tz = (z) => H / 2 - (z - cz) * scale;
@@ -901,7 +941,16 @@ export class Match {
     ctx.fillStyle = '#1e5f7a'; ctx.fillRect(0, 0, W, H);
     const dw = S0 * scale / sc0; ctx.drawImage(this._mmBase, W / 2 - (MAP_R * 1.1 - cx) * scale, H / 2 - (MAP_R * 1.1 - cz) * scale, dw, dw);
     if(this.world.empty){ ctx.fillStyle = '#e8dcc4'; for(const h of w.houses){ ctx.fillRect(tx(h.x) - h.W * scale / 2, tz(h.z) - h.D * scale / 2, h.W * scale, h.D * scale); } }
-    if(big && !this.world.empty){ ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; for(const L of LOCATIONS){ if(L.r > 110) continue; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(L.n.toUpperCase(), tx(L.x) + 1, tz(L.z) + 1); ctx.fillStyle = '#fff'; ctx.fillText(L.n.toUpperCase(), tx(L.x), tz(L.z)); } }
+    if(big && !this.world.empty){
+      if(!this._mmLabels) this._mmLabels = this._layoutLabels(ctx, W, scale, tx, tz);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for(const L of this._mmLabels){
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(L.px, L.pz, 3, 0, 6.283); ctx.fill();
+        ctx.fillStyle = 'rgba(8,12,32,.72)'; ctx.fillRect(L.bx, L.by, L.bw, L.bh);
+        ctx.font = L.font; ctx.fillStyle = '#fff';
+        L.lines.forEach((t, i) => ctx.fillText(t, L.bx + L.bw / 2, L.by + 4 + L.lh * (i + 0.5)));
+      }
+    }
     ctx.fillStyle = '#fbbf24'; for(const c of w.chests) if(!c.opened){ ctx.fillRect(tx(c.pos.x) - 2, tz(c.pos.z) - 2, 4, 4); }
     // tempestade
     ctx.save(); ctx.fillStyle = 'rgba(124,58,237,0.45)'; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(tx(w.storm.cx), tz(w.storm.cz), w.storm.r * scale, 0, Math.PI * 2, true); ctx.fill('evenodd'); ctx.restore();

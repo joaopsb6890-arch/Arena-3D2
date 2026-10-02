@@ -1,3 +1,4 @@
+import { applyTransmission } from '../engine/materials.js';
 // ============================================================
 // LOBBY — palco estilo Fortnite: fundo em degradê com nuvens,
 // jogador ao centro + 3 membros do grupo (NPCs com IA de lobby,
@@ -219,6 +220,7 @@ export class Lobby {
     this.members.forEach((m, i) => { if(Math.random() < 0.7) setTimeout(() => { if(m.a.ch.root.parent){ m.a.anim.stopEmotes(); m.a.anim.play(id); } }, 500 + i * 350 + Math.random() * 400); });
   }
   update(dt){
+    this._ntT = (this._ntT || 0) - dt; if(this._ntT <= 0){ this._ntT = 3; const seen = new Set(); this.scene.traverse(o => { const mt = o.material; if(mt && !Array.isArray(mt) && mt.isMeshPhysicalMaterial && !seen.has(mt)){ seen.add(mt); applyTransmission(mt); } }); }
     this.t = (this.t || 0) + dt;
     Wind.time += dt; Wind.strength = 2.5;
     this.bg.material.uniforms.uT.value = this.t;
