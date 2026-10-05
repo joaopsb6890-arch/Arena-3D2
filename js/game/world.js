@@ -12,7 +12,7 @@ import { Wind } from '../anim/secondary.js';
 import { planPOIs, buildPOIs, ZONES, ROADS, LOCATIONS, palmGeo, cactusGeo, bushGeo, flowerGeo } from './pois.js';
 import { createWeapon, RARITY, GUNS, rollRarity } from './weapons.js';
 
-export const MAP_R = 920;   // v20: 780 → 920 (~1.4× a área)   // v19: ilha ainda maior (600 → 780, ~1.7× a área)
+export const MAP_R = 1100;   // v24: 920 → 1100 (~1.4× a área)   // v20: 780 → 920 (~1.4× a área)   // v19: ilha ainda maior (600 → 780, ~1.7× a área)
 export const GRID = 16, WALL_H = 13;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 

@@ -133,8 +133,8 @@ export class Match {
     // ônibus de batalha
     this.bus = this._makeBus();
     const a = this.net ? this.net.start.busA : Math.random() * Math.PI * 2;
-    this.busFrom = new THREE.Vector3(Math.cos(a) * MAP_R * 0.85, 290, Math.sin(a) * MAP_R * 0.85);
-    this.busTo = this.busFrom.clone().multiplyScalar(-1).setY(290);
+    this.busFrom = new THREE.Vector3(Math.cos(a) * MAP_R * 0.85, 350, Math.sin(a) * MAP_R * 0.85);
+    this.busTo = this.busFrom.clone().multiplyScalar(-1).setY(350);
     this.busT = 0;
     this.actors.forEach(ac => { ac.onBus = true; ac.root.visible = false; ac.body.pos.copy(this.busFrom); ac.jumpAt = ac.isPlayer || ac.remote ? 99 : 0.15 + Math.random() * 0.7; });
     P.equip(0);
@@ -167,8 +167,12 @@ export class Match {
   jumpFromBus(ac){
     ac.onBus = false; ac.root.visible = true;
     ac.body.pos.copy(this.bus.position).add(new THREE.Vector3((Math.random() - 0.5) * 4, -6, (Math.random() - 0.5) * 4));
-    ac.body.vel.set(0, -10, 0); ac.mode = 'freefall'; ac.body.grounded = false; ac.anim.play('busJump');
-    if(ac.isPlayer){ $('deploy-overlay').classList.add('hide'); this.phase = 'drop'; this.tps.dist = 16; this.audio.play('woosh', null, { vol: 0.7 }); }
+    ac.body.vel.set(0, -12, 0); ac.mode = 'freefall'; ac.body.grounded = false; ac.anim.play('busJump');
+    if(ac.isPlayer){ $('deploy-overlay').classList.add('hide'); this.phase = 'drop'; this.tps.dist = 16; this.audio.play('woosh', null, { vol: 0.7 });
+      // v24: efeito de speed lines durante a queda
+      const sl = document.getElementById('speed-lines'); if(sl) sl.style.opacity = '0.6';
+      setTimeout(() => { if(sl) sl.style.opacity = '0'; }, 4000);
+    }
     else { const ang = Math.random() * Math.PI * 2, r = Math.random() * MAP_R * 0.7; ac.dropTarget = new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r); }
   }
   // ---------------- entrada ----------------
@@ -703,7 +707,8 @@ export class Match {
     this.audio.play('chest', c.pos, { vol: 0.9 });
     if(this.sys) this.sys.addGold(actor, 30 + Math.floor(Math.random() * 4) * 10, c.pos);
     // v16: tabela de loot com raridades + granadas/fenda
-    const pool = ['rifle', 'rifle', 'shotgun', 'shotgun', 'smg', 'smg', 'pistol', 'sniper'];
+    // v24: novas armas no pool (LMG, DMR, Revólver, Minigun mais raro)
+    const pool = ['rifle', 'rifle', 'shotgun', 'shotgun', 'smg', 'smg', 'pistol', 'sniper', 'lmg', 'dmr', 'revolver'];
     const w = pool[Math.floor(Math.random() * pool.length)], rar = rollRarity(c.elev ? 0.06 : 0);
     const spawnAt = (i) => c.pos.clone().add(new THREE.Vector3(Math.sin(c.group.rotation.y + i) * 3.5, 0, Math.cos(c.group.rotation.y + i) * 3.5));
     const yy = { y: c.pos.y + 1.5 };
@@ -718,7 +723,7 @@ export class Match {
     if(actor.brain && actor.brain.melee && (WEAPON_STATS[t] || t === 'grenade')) return;   // v22: zumbis não apanham armas
     { const L = this.rules && this.rules.X && this.rules.X.ltm; if(L && L.onlyGun && WEAPON_STATS[t] && t !== L.onlyGun && t !== 'pickaxe'){ if(actor.isPlayer) this.toast('Modo Limitado: só ' + WEAPON_STATS[L.onlyGun].name); return; } }
     if(WEAPON_STATS[t]){ const idx = actor.give(t, pk.rar || 0); if(this.s22) this.s22.rollAttachments(actor, t, pk.rar || 0); if(actor.isPlayer) { actor.equip(idx); this.toast(WEAPON_STATS[t].name + ' ' + RARITY[pk.rar || 0].label.toLowerCase() + ' coletado'); } }
-    else if(t === 'ammo'){ GUNS.forEach(k => actor.reserve[k] = (actor.reserve[k] || 0) + ({ rifle: 30, shotgun: 6, sniper: 3, smg: 36, pistol: 16 })[k]); if(actor.isPlayer) this.toast('Munição +'); }
+    else if(t === 'ammo'){ GUNS.forEach(k => actor.reserve[k] = (actor.reserve[k] || 0) + ({ rifle: 30, shotgun: 6, sniper: 3, smg: 36, pistol: 16, lmg: 60, dmr: 10, rocket: 1, minigun: 150, revolver: 6 })[k] || 0); if(actor.isPlayer) this.toast('Munição +'); }
     else if(t === 'grenade'){ actor.grenades += pk.amount || 1; if(actor.isPlayer) this.toast('Granadas +' + (pk.amount || 1) + ' (X para lançar)'); }
     else if(TACTICALS[t] && actor.tac){ actor.tac[t] += pk.amount || 1; if(actor.isPlayer){ if(!(actor.tac[actor.tacSel] > 0)) actor.tacSel = t; this.toast(TACTICALS[t].n + ' +' + (pk.amount || 1) + ' (T troca, X usa)'); } }
     else if(t === 'rift'){ actor.rifts += 1; if(actor.isPlayer) this.toast('Fenda Portátil (Z para usar)'); }

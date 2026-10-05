@@ -23,6 +23,8 @@ import { setViewMode } from './materials.js';
 import { setTextureResolution } from './textures.js';
 
 export const QUALITY = {
+  // v24: adicionada qualidade "Muito Baixa" para PCs fracos — sem sombras, sem bloom, resolução reduzida
+  muito_baixa: { label: 'Muito Baixa', pr: 0.75, shadows: false, shadowMap: 512, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 0.85, minDyn: 0.6, tex: 256 },
   // v17: Baixa deixa de reduzir a resolução (era 0.75× e o modo adaptativo descia até 0.41× → imagem pixelizada).
   // Agora renderiza à resolução nativa (limitada a 1×) com FXAA barato e o piso adaptativo é alto (0.85).
   baixa:  { label: 'Baixa',  pr: 1.0, shadows: false, shadowMap: 1024, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 1, minDyn: 0.85, tex: 512 },

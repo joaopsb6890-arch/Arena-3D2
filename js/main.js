@@ -29,7 +29,7 @@ const store = {
 
 class App {
   constructor(){
-    this.settings = Object.assign({ name: 'Jogador', skin: 'default', body: 'padrao', quality: this._autoQuality(), weather: 'limpo', time: 15, sens: 1, vol: 0.8, party: true, showStats: true, autoQ: true, pickaxe: 'padrao', glider: 'classico', contrail: 'nuvem' }, store.get('settings', {}));
+    this.settings = Object.assign({ name: 'Jogador', skin: 'default', body: 'padrao', quality: this._autoQuality(), weather: 'limpo', time: 15, sens: 1, vol: 0.8, party: true, showStats: true, autoQ: true, pickaxe: 'padrao', glider: 'classico', contrail: 'nuvem', pet: 'slime' }, store.get('settings', {}));
     this.career = Object.assign({ matches: 0, wins: 0, kills: 0, xp: 0, vbucks: 1500 }, store.get('career', {}));
     this.store = store;
     this.quests = new Quests(this);
@@ -55,7 +55,12 @@ class App {
   }
   _autoQuality(){
     const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent) || innerWidth < 700;
-    return mobile ? 'baixa' : (navigator.hardwareConcurrency || 4) >= 8 ? 'alta' : 'media';
+    if(mobile) return 'muito_baixa';
+    const cores = navigator.hardwareConcurrency || 4;
+    const ram = navigator.deviceMemory || 4;
+    if(cores <= 2 || ram <= 2) return 'muito_baixa';
+    if(cores <= 4 || ram <= 4) return 'baixa';
+    return cores >= 8 ? 'alta' : 'media';
   }
   save(){ store.set('settings', this.settings); }
   async boot(){
@@ -248,7 +253,7 @@ class App {
     this.settings.mode = (() => { try { return localStorage.getItem('fa_mode') || this.settings.mode || 'br'; } catch(e){ return this.settings.mode || 'br'; } })();
     paint();
   }
-  loadout(){ return { pickaxe: this.settings.pickaxe, glider: this.settings.glider, contrail: this.settings.contrail }; }
+  loadout(){ return { pickaxe: this.settings.pickaxe, glider: this.settings.glider, contrail: this.settings.contrail, pet: this.settings.pet }; }
   saveResult(r){
     const vb = 50 + r.kills * 25 + (r.win ? 250 : 0);
     this.career.vbucks = (this.career.vbucks || 0) + vb; this.lastReward = vb;
@@ -271,7 +276,7 @@ class App {
   _stats(s){
     // v20: qualidade automática — se o FPS ficar baixo ~4 s com a resolução adaptativa já no mínimo, desce um nível
     if(this.settings.autoQ !== false && this.screen === 'match' && !this.manual){
-      const order = ['baixa', 'media', 'alta', 'ultra'], i = order.indexOf(this.qualityName);
+      const order = ['muito_baixa', 'baixa', 'media', 'alta', 'ultra'], i = order.indexOf(this.qualityName);
       this._aqLow = s.fps < 34 && s.minDyn ? (this._aqLow || 0) + 1 : 0;
       if(this._aqLow >= 8 && i > 0){ this._aqLow = 0; this.setQuality(order[i - 1]); if(this.match && this.match.toast) this.match.toast('Qualidade ajustada para ' + QUALITY[order[i - 1]].label + ' (desempenho)'); }
     }
@@ -301,12 +306,15 @@ class App {
     if(bpNext) bpNext.textContent = `Próximo nível: ${1000 - (c.xp % 1000)} XP`;
     if(bpFill) bpFill.style.width = p + '%';
     if(bpTiers){
-      const REWARDS = ['200 V-Bucks', 'Planador', 'Emote', 'Picareta', 'Rastro', 'Skin', '300 V-Bucks', 'Mochila', 'Spray', 'Wrap'];
+      // v24: passe de batalha melhorado — 30 níveis, imagens e recompensas variadas
+      const REWARDS = ['200 V-Bucks', 'Planador', 'Emote', 'Picareta', 'Rastro', 'Skin', '300 V-Bucks', 'Mochila', 'Spray', 'Wrap', 'Pet', '400 V-Bucks', 'Planador Raro', 'Emote Épico', 'Picareta Épica', 'Skin Rara', '500 V-Bucks', 'Rastro Lendário', 'Mochila Épica', 'Wrap Lendário', 'Pet Raro', '600 V-Bucks', 'Planador Lendário', 'Skin Épica', 'Picareta Lendária', '700 V-Bucks', 'Rastro Mítico', 'Skin Lendária', 'Pet Lendário', '1000 V-Bucks'];
+      const ICONS = ['💎', '🪂', '💃', '⛏️', '✨', '👤', '💎', '🎒', '🎨', '🔫', '🐾', '💎', '🪂', '💃', '⛏️', '👤', '💎', '✨', '🎒', '🔫', '🐾', '💎', '🪂', '👤', '⛏️', '💎', '✨', '👤', '🐾', '💎'];
       let html = '';
-      for(let i = 1; i <= 20; i++){
+      for(let i = 1; i <= 30; i++){
         const unlocked = i <= lvl;
         const r = REWARDS[(i - 1) % REWARDS.length];
-        html += `<div class="bp-tier ${unlocked ? 'unlocked' : ''} ${i === lvl ? 'current' : ''}"><div class="bp-tier-num">${i}</div><div class="bp-tier-reward">${r}</div><div class="bp-tier-status">${unlocked ? 'OK' : '---'}</div></div>`;
+        const icon = ICONS[(i - 1) % ICONS.length];
+        html += `<div class="bp-tier ${unlocked ? 'unlocked' : ''} ${i === lvl ? 'current' : ''}"><div class="bp-tier-icon">${icon}</div><div class="bp-tier-num">${i}</div><div class="bp-tier-reward">${r}</div><div class="bp-tier-status">${unlocked ? 'OK' : '---'}</div></div>`;
       }
       bpTiers.innerHTML = html;
     }
@@ -315,7 +323,7 @@ class App {
   _card(id, opts){
     const it = itemInfo(id); if(!it) return '';
     const owned = this.owned.has(id), eq = this._isEquipped(id);
-    const sw = it.cat === 'contrail' ? `<div class="sw" style="background:${({ nenhum: 'transparent', nuvem: 'linear-gradient(90deg,#fff0,#fff)', arcoiris: 'linear-gradient(90deg,#ef4444,#f59e0b,#22c55e,#3b82f6,#a855f7)', fogo: 'linear-gradient(90deg,#fde04700,#f97316,#dc2626)', estrelas: 'radial-gradient(circle,#fde047 2px,transparent 3px) 0 0/14px 14px', raios: 'linear-gradient(90deg,#60a5fa00,#93c5fd,#1d4ed8)', coracoes: 'radial-gradient(circle,#f472b6 3px,transparent 4px) 0 0/14px 14px,#fce7f3', fumaca: 'linear-gradient(90deg,#33415500,#334155,#0f172a)', neve: 'radial-gradient(circle,#fff 2px,transparent 3px) 0 0/10px 10px,#bae6fd', toxico: 'linear-gradient(90deg,#84cc1600,#bef264,#3f6212)', galaxia: 'radial-gradient(circle,#fff 1px,transparent 2px) 0 0/9px 9px,linear-gradient(90deg,#1e1b4b,#a855f7,#ec4899)' })[it.key]}"></div>` : it.cat === 'emote' ? '<div class="ph">♪</div>' : '<div class="ph">…</div>';
+    const sw = it.cat === 'contrail' ? `<div class="sw" style="background:${({ nenhum: 'transparent', nuvem: 'linear-gradient(90deg,#fff0,#fff)', arcoiris: 'linear-gradient(90deg,#ef4444,#f59e0b,#22c55e,#3b82f6,#a855f7)', fogo: 'linear-gradient(90deg,#fde04700,#f97316,#dc2626)', estrelas: 'radial-gradient(circle,#fde047 2px,transparent 3px) 0 0/14px 14px', raios: 'linear-gradient(90deg,#60a5fa00,#93c5fd,#1d4ed8)', coracoes: 'radial-gradient(circle,#f472b6 3px,transparent 4px) 0 0/14px 14px,#fce7f3', fumaca: 'linear-gradient(90deg,#33415500,#334155,#0f172a)', neve: 'radial-gradient(circle,#fff 2px,transparent 3px) 0 0/10px 10px,#bae6fd', toxico: 'linear-gradient(90deg,#84cc1600,#bef264,#3f6212)', galaxia: 'radial-gradient(circle,#fff 1px,transparent 2px) 0 0/9px 9px,linear-gradient(90deg,#1e1b4b,#a855f7,#ec4899)' })[it.key]}"></div>` : it.cat === 'emote' ? '<div class="ph">♪</div>' : it.cat === 'pet' ? '<div class="ph">🐾</div>' : '<div class="ph">…</div>';
     const price = opts && opts.shop ? `<span class="price">${owned ? '<b class="owned">ADQUIRIDO</b>' : `<i></i>${it.price.toLocaleString('pt-PT')}`}</span>` : '';
     return `<button class="item ${eq && !(opts && opts.shop) ? 'sel' : ''} ${!owned && !(opts && opts.shop) ? 'locked' : ''}" data-id="${id}" style="--r1:${it.r.color};--r2:${it.r.c2}">${sw}<img data-thumb="${id}" alt="" style="display:none"><span class="nm"><small>${it.r.label} · ${CATS[it.cat].label}</small>${it.name}${price}</span></button>`;
   }
@@ -324,7 +332,9 @@ class App {
   }
   _isEquipped(id){
     const [cat, key] = id.split(':');
-    return cat === 'emote' ? false : this.settings[cat] === key;
+    if(cat === 'emote') return false;
+    if(cat === 'pet') return this.settings.pet === key;
+    return this.settings[cat] === key;
   }
   _lockerUI(){
     const cat = this.lockerCat, g = $('locker-grid');
@@ -337,7 +347,7 @@ class App {
     $('locker-extra').style.display = cat === 'skin' ? 'block' : 'none';
     this._fillThumbs(g);
   }
-  _refreshPlayer(){ this.lobby.setPlayer(this.settings.skin, this.settings.body, this.settings.name, this.loadout()); }
+  _refreshPlayer(){ this.lobby.setPlayer(this.settings.skin, this.settings.body, this.settings.name, this.loadout()); this.lobby._spawnPet(); }
   _equip(id){
     const [cat, key] = id.split(':');
     this.audio.play('ui', null, { vol: 0.4 });
@@ -349,6 +359,7 @@ class App {
     else if(cat === 'pickaxe'){ this.lobby.loadout = this.loadout(); this.lobby.setPickaxeStyle(key); }
     else if(cat === 'glider'){ this.lobby.previewGlider(key); }
     else if(cat === 'contrail'){ this.lobby.previewGlider(this.settings.glider); }
+    else if(cat === 'pet'){ this.lobby._spawnPet(); this.toastUI('Pet equipado — segue-te no lobby'); }
     this._lockerUI();
   }
   _tryOn(id){
@@ -357,6 +368,7 @@ class App {
     else if(cat === 'pickaxe') this.lobby.setPickaxeStyle(key);
     else if(cat === 'glider') this.lobby.previewGlider(key);
     else if(cat === 'emote') this.lobby.playEmote(key);
+    else if(cat === 'pet'){ this.settings.pet = key; this.lobby._spawnPet(); }
   }
   _shopUI(){
     const sh = dailyShop();

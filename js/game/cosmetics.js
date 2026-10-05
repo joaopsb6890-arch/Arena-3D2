@@ -3,13 +3,15 @@
 // emotes; rotação diária determinística da loja; inventário.
 // ============================================================
 import { SKINS } from '../anim/skins.js';
+import { PETS } from './pets.js';
 
 export const RARITY = {
   comum:    { label: 'Comum',    color: '#8a94a6', c2: '#5b6474', price: 500 },
   incomum:  { label: 'Incomum',  color: '#4fb33a', c2: '#2d7a1f', price: 800 },
   raro:     { label: 'Raro',     color: '#2f8ce0', c2: '#1a5aa8', price: 1200 },
   epico:    { label: 'Épico',    color: '#a34de0', c2: '#6b21a8', price: 1500 },
-  lendario: { label: 'Lendário', color: '#e8913a', c2: '#b45309', price: 2000 }
+  lendario: { label: 'Lendário', color: '#e8913a', c2: '#b45309', price: 2000 },
+  mitico:   { label: 'Mítico',   color: '#facc15', c2: '#a16207', price: 3000 }
 };
 
 // estilo → parâmetros do modelo (weapons.js) + efeitos de golpe
@@ -92,16 +94,17 @@ export const CATS = {
   pickaxe: { label: 'Picareta', list: () => PICKAXES },
   glider: { label: 'Planador', list: () => GLIDERS },
   contrail: { label: 'Rastro', list: () => CONTRAILS },
-  emote: { label: 'Emote', list: () => SHOP_EMOTES }
+  emote: { label: 'Emote', list: () => SHOP_EMOTES },
+  pet: { label: 'Pet', list: () => PETS }
 };
 // os 12 trajes originais continuam liberados; os 6 novos trajes são da loja
-export const DEFAULT_OWNED = ['skin:default', 'skin:red', 'skin:green', 'skin:purple', 'skin:gold', 'skin:shadow', 'skin:ice', 'skin:fire', 'skin:pink', 'skin:forest', 'skin:ocean', 'skin:royal', 'pickaxe:padrao', 'pickaxe:osso', 'pickaxe:espatula', 'glider:classico', 'contrail:nenhum', 'contrail:nuvem'];
+export const DEFAULT_OWNED = ['skin:default', 'skin:red', 'skin:green', 'skin:purple', 'skin:gold', 'skin:shadow', 'skin:ice', 'skin:fire', 'skin:pink', 'skin:forest', 'skin:ocean', 'skin:royal', 'pickaxe:padrao', 'pickaxe:osso', 'pickaxe:espatula', 'glider:classico', 'contrail:nenhum', 'contrail:nuvem', 'pet:slime'];
 
 export function itemInfo(id){
   const [cat, key] = id.split(':');
   const it = CATS[cat] && CATS[cat].list()[key]; if(!it) return null;
   const r = RARITY[it.rarity || 'comum'];
-  const price = it.price || Math.round(r.price * ({ skin: 1, pickaxe: 0.6, glider: 0.6, contrail: 0.4, emote: 0.4 }[cat]) / 100) * 100;
+  const price = it.price || Math.round(r.price * ({ skin: 1, pickaxe: 0.6, glider: 0.6, contrail: 0.4, emote: 0.4, pet: 0.7 }[cat] || 0.5) / 100) * 100;
   return { id, cat, key, name: it.name, rarity: it.rarity || 'comum', r, price, hex: it.hex };
 }
 

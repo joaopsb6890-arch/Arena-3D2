@@ -43,13 +43,13 @@ export class Studio {
     this.particles = new ParticleSystem(s, app.qualityName);
     this.env = new Environment(s, app.renderer, this.particles, app.audio, { time: 16, cloudArea: 900 });
     this.physics = new PhysicsWorld(() => 0);
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(160, 96), Mat.ground(0x7a9a55)); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; s.add(ground);
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(9, 9.4, 0.35, 64), Mat.plaster(0xd9d4ca)); pad.position.y = 0.17; pad.receiveShadow = true; pad.castShadow = true; s.add(pad);
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(160, 96), Mat.ground(0x1a1040)); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; s.add(ground);
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(9, 9.4, 0.35, 64), Mat.plaster(0x312e81)); pad.position.y = 0.17; pad.receiveShadow = true; pad.castShadow = true; s.add(pad);
     this.padH = 0.35;
     // grade de referência
-    const grid = new THREE.PolarGridHelper(9, 16, 6, 64, 0x9a9486, 0xb8b2a4); grid.position.y = 0.36; grid.material.transparent = true; grid.material.opacity = 0.35; s.add(grid);
+    const grid = new THREE.PolarGridHelper(9, 16, 6, 64, 0xa855f7, 0x7c3aed); grid.position.y = 0.36; grid.material.transparent = true; grid.material.opacity = 0.35; s.add(grid);
     // props de interação e PBR: esfera cromada, vidro, metal escovado
-    const props = [[Mat.metal(0xe8e8ea, 0.05), -14, 2.2], [Mat.glass(0xbfe3ff), -18, 2.2], [Mat.metal(0xc07a3a, 0.35), -22, 2.2]];
+    const props = [[Mat.metal(0xe8e8ea, 0.05), -14, 2.2], [Mat.glass(0xbfe3ff), -18, 2.2], [Mat.metal(0xa855f7, 0.35), -22, 2.2]];
     props.forEach(([m, x, r]) => { const b = new THREE.Mesh(new THREE.SphereGeometry(r, 48, 32), m); b.position.set(x, r, -6); b.castShadow = true; b.receiveShadow = true; s.add(b); });
     this.fireSpot = new THREE.Vector3(14, 0, -6);
     this.director = new CinematicDirector(this.camera, document.getElementById('letterbox'));
@@ -73,7 +73,7 @@ export class Studio {
   _applyWeapon(){
     const a = this.anim, w = this.state.weapon;
     a.setWeapon(null); a.setPickaxe(null); a.setProp(null);
-    if(['rifle', 'shotgun', 'sniper', 'smg', 'pistol'].includes(w)) a.setWeapon(createWeapon(w));
+    if(['rifle', 'shotgun', 'sniper', 'smg', 'pistol', 'lmg', 'dmr', 'rocket', 'minigun', 'revolver'].includes(w)) a.setWeapon(createWeapon(w));
     if(w === 'pickaxe') a.setPickaxe(createPickaxe(this.state.pickaxe || 'padrao'));
     if(this.glider){ this.glider.parent && this.glider.parent.remove(this.glider); this.glider = null; }
   }
@@ -202,7 +202,7 @@ export class Studio {
       <div class="st-sec"><h4>Personagem</h4>
         ${sel('skin', 'Skin', Object.fromEntries(Object.entries(SKINS).map(([k, v]) => [k, v.name])), st.skin)}
         ${sel('body', 'Tipo de corpo (retarget)', Object.fromEntries(Object.entries(BODY_TYPES).map(([k, v]) => [k, v.label])), st.body)}
-        ${sel('weapon', 'Item na mão', { none: 'Mãos livres', pickaxe: 'Picareta', rifle: 'Fuzil', shotgun: 'Escopeta', sniper: 'Sniper' }, st.weapon)}
+        ${sel('weapon', 'Item na mão', { none: 'Mãos livres', pickaxe: 'Picareta', rifle: 'Fuzil', shotgun: 'Escopeta', sniper: 'Sniper', smg: 'SMG', pistol: 'Pistola', lmg: 'Metralhadora', dmr: 'DMR', rocket: 'Lança-Foguetes', minigun: 'Minigun', revolver: 'Revólver' }, st.weapon)}
         ${sel('pickaxe', 'Estilo da picareta', Object.fromEntries(Object.entries(PICKAXES).map(([k, v]) => [k, v.name])), st.pickaxe)}
         ${sel('glider', 'Planador', Object.fromEntries(Object.entries(GLIDERS).map(([k, v]) => [k, v.name])), st.glider)}
         ${sel('lod', 'LOD', { auto: 'Automático', 0: 'LOD0 (alto)', 1: 'LOD1', 2: 'LOD2 (baixo)' }, st.lod)}

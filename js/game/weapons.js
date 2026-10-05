@@ -11,15 +11,17 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { Mat } from '../engine/materials.js';
 
 // v16: raridades (multiplicador de dano) — cor = cor da raridade no Fortnite
+// v24: adicionada raridade Mítica (acima de Lendário)
 export const RARITY = [
   { id: 'comum', label: 'Comum', css: 'common', color: 0x9ca3af, mult: 1.0 },
   { id: 'incomum', label: 'Incomum', css: 'uncommon', color: 0x22c55e, mult: 1.06 },
   { id: 'raro', label: 'Raro', css: 'rare', color: 0x3b82f6, mult: 1.12 },
   { id: 'epico', label: 'Épico', css: 'epic', color: 0xa855f7, mult: 1.18 },
-  { id: 'lendario', label: 'Lendário', css: 'legendary', color: 0xf59e0b, mult: 1.25 }
+  { id: 'lendario', label: 'Lendário', css: 'legendary', color: 0xf59e0b, mult: 1.25 },
+  { id: 'mitico', label: 'Mítico', css: 'mythic', color: 0xfacc15, mult: 1.35 }
 ];
-export function rollRarity(bias){ const r = Math.random() + (bias || 0); return r > 0.97 ? 4 : r > 0.88 ? 3 : r > 0.7 ? 2 : r > 0.42 ? 1 : 0; }
-export const GUNS = ['rifle', 'shotgun', 'sniper', 'smg', 'pistol'];
+export function rollRarity(bias){ const r = Math.random() + (bias || 0); return r > 0.99 ? 5 : r > 0.97 ? 4 : r > 0.88 ? 3 : r > 0.7 ? 2 : r > 0.42 ? 1 : 0; }
+export const GUNS = ['rifle', 'shotgun', 'sniper', 'smg', 'pistol', 'lmg', 'dmr', 'rocket', 'minigun', 'revolver'];
 export const WEAPON_STATS = {
   pickaxe: { name: 'Picareta', icon: '⛏️', dmg: 35, cd: 0.5, range: 7 },
   rifle:   { name: 'Fuzil de Assalto', short: 'AR', icon: '🔫', dmg: 32, head: 2, cd: 0.11, mag: 30, reserve: 180, spread: 0.012, auto: true, reloadClip: 'reloadRifle', reloadTime: 1.7, range: 400 },
@@ -27,7 +29,13 @@ export const WEAPON_STATS = {
   sniper:  { name: 'Rifle de Precisão', short: 'SNP', icon: '🎯', dmg: 110, head: 2.5, cd: 1.3, mag: 1, reserve: 16, spread: 0.0, bolt: true, reloadClip: 'boltSniper', reloadTime: 0.85, range: 900, scope: true },
   // v16
   smg:     { name: 'Submetralhadora', short: 'SMG', icon: '🔫', dmg: 17, head: 1.75, cd: 0.075, mag: 30, reserve: 210, spread: 0.028, auto: true, reloadClip: 'reloadRifle', reloadTime: 1.7, range: 160, drop: 70 },
-  pistol:  { name: 'Pistola', short: 'PST', icon: '🔫', dmg: 25, head: 2, cd: 0.17, mag: 16, reserve: 96, spread: 0.016, reloadClip: 'reloadRifle', reloadTime: 1.7, range: 260, drop: 120 }
+  pistol:  { name: 'Pistola', short: 'PST', icon: '🔫', dmg: 25, head: 2, cd: 0.17, mag: 16, reserve: 96, spread: 0.016, reloadClip: 'reloadRifle', reloadTime: 1.7, range: 260, drop: 120 },
+  // v24: novas armas
+  lmg:     { name: 'Metralhadora Ligeira', short: 'LMG', icon: '🔫', dmg: 28, head: 1.8, cd: 0.09, mag: 60, reserve: 300, spread: 0.022, auto: true, reloadClip: 'reloadRifle', reloadTime: 3.0, range: 350, drop: 90 },
+  dmr:     { name: 'Rifle de Precisão Semi', short: 'DMR', icon: '🎯', dmg: 65, head: 2.2, cd: 0.35, mag: 10, reserve: 60, spread: 0.006, reloadClip: 'reloadRifle', reloadTime: 2.0, range: 500, drop: 60, scope: true },
+  rocket:  { name: 'Lança-Foguetes', short: 'RPG', icon: '🚀', dmg: 120, head: 1.0, cd: 1.8, mag: 1, reserve: 8, spread: 0.0, reloadClip: 'reloadRifle', reloadTime: 2.5, range: 300, explosive: true, radius: 8 },
+  minigun: { name: 'Minigun', short: 'MIN', icon: '🔫', dmg: 22, head: 1.5, cd: 0.05, mag: 150, reserve: 450, spread: 0.035, auto: true, reloadClip: 'reloadRifle', reloadTime: 3.5, range: 250, drop: 80, spinup: 0.5 },
+  revolver:{ name: 'Revólver', short: 'REV', icon: '🔫', dmg: 55, head: 2.0, cd: 0.5, mag: 6, reserve: 36, spread: 0.01, reloadClip: 'reloadRifle', reloadTime: 1.8, range: 300, drop: 100 }
 };
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -53,7 +61,7 @@ const RX = [Math.PI / 2, 0, 0];
 
 function marker(g, name, p){ const o = new THREE.Object3D(); o.name = name; o.position.copy(p); g.add(o); return o; }
 
-const WEAPON_SCALE = { rifle: 1.35, shotgun: 1.3, sniper: 1.25, smg: 1.35, pistol: 1.45 };
+const WEAPON_SCALE = { rifle: 1.35, shotgun: 1.3, sniper: 1.25, smg: 1.35, pistol: 1.45, lmg: 1.4, dmr: 1.3, rocket: 1.5, minigun: 1.5, revolver: 1.4 };
 export function createWeapon(type){
   const gunMetal = Mat.metal(0x2d323c, 0.38), steel = Mat.metal(0x16181d, 0.3), bright = Mat.metal(0xa8b0ba, 0.22);
   const poly = Mat.polymer(0x1d1f26), poly2 = Mat.polymer(0x3a3f2e), rubber = Mat.polymer(0x0c0c0c);
@@ -186,6 +194,100 @@ export function createWeapon(type){
     markers.muzzle = marker(root, 'muzzle', V(0, 0.2, 0.58));
     markers.sight = marker(root, 'sight', V(0, 0.3, -0.1));
     markers.eject = marker(root, 'eject', V(-0.07, 0.23, 0.15));
+  } else if(type === 'revolver'){
+    // v24: revólver pesado — cano longo, cilindro, coronha de madeira
+    b.add(gunMetal, box(0.16, 0.14, 0.7, 0.03), V(0, 0.2, 0.25))
+     .add(steel, cyl(0.035, 0.035, 0.5, 14), V(0, 0.22, 0.65), RX)
+     .add(bright, cyl(0.05, 0.05, 0.04, 14), V(0, 0.22, 0.9), RX)
+     .add(wood, box(0.13, 0.3, 0.16, 0.05), V(0, -0.1, -0.03), [-0.3, 0, 0])
+     .add(wood, box(0.15, 0.26, 0.5, 0.06), V(0, 0.1, -0.45))
+     .add(rubber, box(0.16, 0.3, 0.06, 0.02), V(0, 0.1, -0.72))
+     .add(steel, box(0.03, 0.08, 0.12), V(0, 0.02, 0.1))
+     .add(steel, box(0.03, 0.05, 0.04), V(0, 0.3, 0.45)).add(steel, box(0.08, 0.05, 0.04), V(0, 0.3, -0.06));
+    b.build(root);
+    // cilindro do revólver
+    const cyl_ = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.16, 12), steel); cyl_.position.set(0, 0.1, 0.15); cyl_.rotation.x = Math.PI / 2; root.add(cyl_); parts.cyl = cyl_;
+    markers.fore = marker(root, 'fore', V(0, -0.14, 0.02));
+    markers.muzzle = marker(root, 'muzzle', V(0, 0.22, 0.92));
+    markers.sight = marker(root, 'sight', V(0, 0.3, -0.1));
+    markers.eject = marker(root, 'eject', V(-0.07, 0.23, 0.15));
+  } else if(type === 'lmg'){
+    // v24: metralhadora ligeira — bipé, cano grosso, carregador de caixa
+    b.add(gunMetal, box(0.22, 0.22, 1.1, 0.04), V(0, 0.2, 0.35))
+     .add(steel, cyl(0.05, 0.05, 0.8, 16), V(0, 0.24, 1.2), RX)
+     .add(bright, cyl(0.07, 0.07, 0.08, 16), V(0, 0.24, 1.62), RX)
+     .add(poly, box(0.14, 0.32, 0.16, 0.04), V(0, -0.1, -0.02), [-0.3, 0, 0])
+     .add(poly, box(0.16, 0.24, 0.6, 0.05), V(0, 0.1, -0.6))
+     .add(rubber, box(0.17, 0.28, 0.06, 0.02), V(0, 0.1, -0.92))
+     .add(steel, box(0.03, 0.1, 0.14), V(0, 0.02, 0.16))
+     .add(glow, box(0.012, 0.03, 0.25), V(0.1, 0.24, 0.5));
+    b.build(root);
+    const mag = new THREE.Group(); mag.position.set(0, -0.06, 0.45);
+    const mb = new WB(); mb.add(poly, box(0.14, 0.38, 0.22, 0.03), V(0, -0.16, 0), [0.15, 0, 0]).add(steel, box(0.15, 0.04, 0.23), V(0, -0.35, 0.05), [0.15, 0, 0]); mb.build(mag); root.add(mag); parts.mag = mag;
+    // bipé
+    for(const sd of [-1, 1]) b.add(steel, cyl(0.015, 0.015, 0.4, 5), V(sd * 0.06, -0.1, 1.1), [Math.PI / 2 + 0.3, 0, sd * 0.2]);
+    markers.fore = marker(root, 'fore', V(0, 0.06, 0.8));
+    markers.muzzle = marker(root, 'muzzle', V(0, 0.24, 1.68));
+    markers.sight = marker(root, 'sight', V(0, 0.42, 0.2));
+    markers.eject = marker(root, 'eject', V(-0.12, 0.24, 0.35));
+  } else if(type === 'dmr'){
+    // v24: rifle de precisão semi-auto — cano longo, mira telescópica
+    b.add(gunMetal, box(0.18, 0.18, 0.95, 0.03), V(0, 0.2, 0.3))
+     .add(steel, cyl(0.035, 0.035, 1.2, 14), V(0, 0.22, 1.3), RX)
+     .add(bright, cyl(0.06, 0.06, 0.08, 14), V(0, 0.22, 1.95), RX)
+     .add(wood, box(0.19, 0.16, 1.1, 0.04), V(0, 0.08, 0.5))
+     .add(wood, box(0.13, 0.3, 0.16, 0.05), V(0, -0.1, -0.03), [-0.3, 0, 0])
+     .add(wood, box(0.16, 0.28, 0.55, 0.05), V(0, 0.1, -0.5))
+     .add(rubber, box(0.17, 0.3, 0.06, 0.02), V(0, 0.1, -0.82))
+     .add(steel, box(0.03, 0.1, 0.14), V(0, 0.03, 0.15));
+    // mira telescópica
+    b.add(steel, cyl(0.07, 0.07, 0.8, 18), V(0, 0.42, 0.3), RX)
+     .add(steel, cyl(0.1, 0.07, 0.16, 18), V(0, 0.42, 0.75), RX)
+     .add(glass, new THREE.CircleGeometry(0.09, 20), V(0, 0.42, 0.83))
+     .add(accent, cyl(0.08, 0.08, 0.03, 18), V(0, 0.42, 0.66), RX);
+    b.build(root);
+    const mag = new THREE.Group(); mag.position.set(0, -0.04, 0.38);
+    const mb = new WB(); mb.add(poly, box(0.1, 0.22, 0.16, 0.02), V(0, -0.08, 0)).add(steel, box(0.11, 0.04, 0.17), V(0, -0.19, 0)); mb.build(mag); root.add(mag); parts.mag = mag;
+    markers.fore = marker(root, 'fore', V(0, -0.02, 0.9));
+    markers.muzzle = marker(root, 'muzzle', V(0, 0.22, 2.0));
+    markers.sight = marker(root, 'sight', V(0, 0.42, -0.1));
+    markers.eject = marker(root, 'eject', V(-0.11, 0.24, 0.3));
+  } else if(type === 'rocket'){
+    // v24: lança-foguetes — tubo grosso, mira, suporte
+    const tubeM = Mat.metal(0x4a5568, 0.4);
+    b.add(tubeM, cyl(0.12, 0.12, 1.4, 20), V(0, 0.2, 0.6), RX)
+     .add(tubeM, cyl(0.13, 0.13, 0.1, 20), V(0, 0.2, 1.35), RX)
+     .add(tubeM, cyl(0.13, 0.13, 0.1, 20), V(0, 0.2, -0.15), RX)
+     .add(poly, box(0.16, 0.3, 0.16, 0.04), V(0, -0.1, -0.03), [-0.3, 0, 0])
+     .add(steel, box(0.04, 0.12, 0.5, 0.02), V(0.08, 0.35, 0.3))
+     .add(steel, box(0.04, 0.12, 0.3, 0.02), V(-0.08, 0.35, 0.2))
+     .add(accent, box(0.24, 0.04, 0.1), V(0, 0.28, 0.8))
+     .add(glow, box(0.012, 0.03, 0.3), V(0.1, 0.22, 0.5));
+    b.build(root);
+    markers.fore = marker(root, 'fore', V(0, 0.06, 0.4));
+    markers.muzzle = marker(root, 'muzzle', V(0, 0.2, 1.45));
+    markers.sight = marker(root, 'sight', V(0, 0.38, 0.2));
+    markers.eject = marker(root, 'eject', V(0, 0.2, -0.2));
+  } else if(type === 'minigun'){
+    // v24: minigun — canos múltiplos rotativos, corpo grande
+    const barrelM = Mat.metal(0x6b7280, 0.3);
+    b.add(gunMetal, box(0.24, 0.24, 0.8, 0.04), V(0, 0.2, 0.2))
+     .add(poly, box(0.2, 0.16, 0.6, 0.03), V(0, 0.04, 0.22))
+     .add(poly, box(0.14, 0.32, 0.16, 0.04), V(0, -0.1, -0.02), [-0.3, 0, 0])
+     .add(poly, box(0.18, 0.22, 0.5, 0.05), V(0, 0.1, -0.5))
+     .add(rubber, box(0.19, 0.28, 0.06, 0.02), V(0, 0.1, -0.78))
+     .add(steel, box(0.03, 0.1, 0.14), V(0, 0.02, 0.16))
+     .add(glow, box(0.012, 0.03, 0.3), V(0.1, 0.24, 0.4));
+    b.build(root);
+    // canos rotativos (6 canos)
+    const spinner = new THREE.Group(); spinner.position.set(0, 0.22, 1.0);
+    for(let i = 0; i < 6; i++){ const a = i / 6 * Math.PI * 2; const barrel = new THREE.Mesh(cyl(0.022, 0.022, 0.7, 8), barrelM); barrel.position.set(Math.cos(a) * 0.05, Math.sin(a) * 0.05, 0.15); barrel.rotation.x = Math.PI / 2; spinner.add(barrel); }
+    const ring_ = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 16), steel); spinner.add(ring_);
+    root.add(spinner); parts.spinner = spinner;
+    markers.fore = marker(root, 'fore', V(0, 0.06, 0.6));
+    markers.muzzle = marker(root, 'muzzle', V(0, 0.22, 1.75));
+    markers.sight = marker(root, 'sight', V(0, 0.4, 0.1));
+    markers.eject = marker(root, 'eject', V(-0.12, 0.24, 0.3));
   }
   markers.grip = marker(root, 'grip', V(0, -0.04, -0.02));
   root.traverse(o => { if(o.isMesh) o.castShadow = true; });
