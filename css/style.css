@@ -195,8 +195,9 @@ body[data-screen=match] #stats{left:auto;right:10px;bottom:auto;top:250px}
 #ammo{position:absolute;right:0;bottom:84px;font:400 28px var(--disp);text-shadow:0 2px 4px #000;white-space:nowrap}
 #build-bar{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:6px;opacity:0;transition:.15s}
 #build-bar.on{opacity:1}
-#build-bar span{padding:8px 12px;border-radius:6px;background:rgba(0,0,0,.5);border:2px solid transparent;font-weight:800;font-size:13px}
-#build-bar span.active{border-color:#6366f1;background:rgba(37,99,235,.55)}
+#build-bar span{padding:8px 14px;border-radius:8px;background:rgba(15,10,35,.6);border:2px solid rgba(168,85,247,.2);font-weight:800;font-size:13px;color:#fff}
+#build-bar span:hover{border-color:rgba(168,85,247,.5)}
+#build-bar span.active{border-color:#a855f7;background:rgba(168,85,247,.3);box-shadow:0 0 12px rgba(168,85,247,.3)}
 #nametag-layer{position:absolute;inset:0}
 .nametag{position:absolute;left:0;top:0;text-align:center;font:700 12px var(--body);text-shadow:0 1px 3px #000}
 .nametag i{display:block;width:56px;height:4px;margin:2px auto 0;border-radius:2px;background:rgba(0,0,0,.5);overflow:hidden}.nametag i b{display:block;height:100%;background:#4ade80}

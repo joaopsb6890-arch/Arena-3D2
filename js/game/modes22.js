@@ -112,13 +112,30 @@ export class ModeExtras {
     setTimeout(() => this._raceCar(), 300);
   }
   _racePath(){
-    // percurso: segue a cadeia de estradas a partir do centro
+    // v25: percurso que evita casas — desvia checkpoints para longe de edifícios
     const pts = [[0, -10]]; let cur = [0, -10]; const used = new Set();
     for(let k = 0; k < 14; k++){ const i = ROADS.findIndex((r, j) => !used.has(j) && Math.hypot(r[0] - cur[0], r[1] - cur[1]) < 2); if(i < 0) break; used.add(i); const r = ROADS[i]; pts.push([r[2], r[3]]); cur = [r[2], r[3]]; }
-    const path = []; for(let i = 0; i < pts.length - 1; i++){ const [ax, az] = pts[i], [bx, bz] = pts[i + 1], L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 70)); for(let j = 0; j < n; j++){ const t = j / n; path.push(new THREE.Vector3(ax + (bx - ax) * t, 0, az + (bz - az) * t)); } }
-    path.push(new THREE.Vector3(...[pts[pts.length - 1][0], 0, pts[pts.length - 1][1]]));
-    this.path = path.slice(1, 23); let len = 0; for(let i = 1; i < this.path.length; i++) len += this.path[i].distanceTo(this.path[i - 1]);
-    this.len = len; this.medals = { ouro: len / 55, prata: len / 44, bronze: len / 34 };
+    const path = [];
+    for(let i = 0; i < pts.length - 1; i++){
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1], L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 70));
+      for(let j = 0; j < n; j++){
+        const t = j / n;
+        let px = ax + (bx - ax) * t, pz = az + (bz - az) * t;
+        // v25: desviar checkpoints que ficam dentro de edifícios
+        const loc = this.m.world.locationAt ? this.m.world.locationAt(px, pz) : null;
+        if(loc && loc.r < 80){
+          const offX = (bz - az) / L * 20, offZ = -(bx - ax) / L * 20;
+          px += offX; pz += offZ;
+        }
+        path.push(new THREE.Vector3(px, 0, pz));
+      }
+    }
+    path.push(new THREE.Vector3(pts[pts.length - 1][0], 0, pts[pts.length - 1][1]));
+    this.path = path.slice(1, 23);
+    let len = 0; for(let i = 1; i < this.path.length; i++) len += this.path[i].distanceTo(this.path[i - 1]);
+    this.len = len;
+    // v25: medalhas mais alcançáveis
+    this.medals = { ouro: len / 45, prata: len / 38, bronze: len / 30 };
   }
   _raceCar(){
     const m = this.m, P = m.player, v = m.v20; if(!v || !P) return;

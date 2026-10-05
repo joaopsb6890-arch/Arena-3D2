@@ -35,9 +35,21 @@ export const PREFABS = {
   spawn:  { name: 'Ponto de spawn', cat: 'Jogabilidade', grid: 2, size: [3, 6, 3], color: '#e5e7eb' },
   spawnA: { name: 'Spawn equipa azul', cat: 'Jogabilidade', grid: 2, size: [3, 6, 3], color: '#3b82f6' },
   spawnB: { name: 'Spawn equipa vermelha', cat: 'Jogabilidade', grid: 2, size: [3, 6, 3], color: '#ef4444' },
-  loot:   { name: 'Arma no chão', cat: 'Jogabilidade', grid: 2, size: [3, 1, 1], color: '#a855f7' }
+  loot:   { name: 'Arma no chão', cat: 'Jogabilidade', grid: 2, size: [3, 1, 1], color: '#a855f7' },
+  // v25: novos itens criativos
+  bridge: { name: 'Ponte', cat: 'Construção', grid: 2, size: [6, 2, 16], color: '#7a4418', flatOnly: true },
+  tower:  { name: 'Torre', cat: 'Construção', grid: GRID, size: [GRID, 30, GRID], color: '#9ca3af' },
+  arch:   { name: 'Arco', cat: 'Construção', grid: 2, size: [10, 14, 2], color: '#d4a02a' },
+  flower: { name: 'Flores', cat: 'Natureza', grid: 2, size: [4, 1.5, 4], color: '#f472b6' },
+  cactus:{ name: 'Cacto', cat: 'Natureza', grid: 2, size: [3, 8, 3], color: '#4ade80' },
+  palm:  { name: 'Palmeira', cat: 'Natureza', grid: 2, size: [6, 14, 6], color: '#2f8a35' },
+  flag:  { name: 'Bandeira', cat: 'Objetos', grid: 2, size: [1, 12, 1], color: '#a855f7' },
+  sign:  { name: 'Sinalização', cat: 'Objetos', grid: 2, size: [4, 6, 0.5], color: '#fbbf24' },
+  teleport: { name: 'Portal', cat: 'Jogabilidade', grid: 2, size: [5, 8, 5], color: '#a855f7' },
+  rampjump: { name: 'Rampa de Salto', cat: 'Jogabilidade', grid: 2, size: [7, 3, 7], color: '#22d3ee' },
+  target: { name: 'Alvo', cat: 'Jogabilidade', grid: 2, size: [4, 8, 0.5], color: '#ef4444' }
 };
-const DEFAULT_BAR = ['wall', 'floor', 'ramp', 'cone', 'cabin', 'tree', 'rock', 'chest', 'spawn'];
+const DEFAULT_BAR = ['wall', 'floor', 'ramp', 'cone', 'cabin', 'tree', 'rock', 'chest', 'spawn', 'tower', 'bridge', 'teleport'];
 
 // ---------------- instanciar um item do mapa ----------------
 function spawnItem(m, it, editor){

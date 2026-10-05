@@ -295,9 +295,10 @@ export class PetBrain {
     const ownerPos = this.owner.root ? this.owner.root.position : this.owner.position;
     const hover = def.hover || 0;
 
-    // posição fixa ao lado do dono (usa o yaw do dono para posicionar atrás-direita)
+    // posição fixa ao lado direito do dono (não orbita, não fica atrás)
     const ownerYaw = this.owner.yaw !== undefined ? this.owner.yaw : (this.owner.rotation ? this.owner.rotation.y : 0);
-    const sideOffset = this.sideAngle + ownerYaw;
+    // ângulo 90° à direita do jogador + offset de seguir
+    const sideOffset = ownerYaw - Math.PI / 2; // 90° à direita
     const dist = this.followDist;
     this.targetPos.set(
       ownerPos.x + Math.sin(sideOffset) * dist,
@@ -309,7 +310,7 @@ export class PetBrain {
     this.pet.position.lerp(this.targetPos, Math.min(1, dt * (def.speed || 10) * 0.4));
 
     // olhar para a mesma direção do dono
-    const targetYaw = ownerYaw + Math.PI; // olhar para a frente como o dono
+    const targetYaw = ownerYaw;
     let yaw = this.pet.rotation.y;
     const diff = ((targetYaw - yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     this.pet.rotation.y += diff * Math.min(1, dt * 6);

@@ -56,7 +56,10 @@ function wheelGeo(r, w){
 export function vehicleMesh(type, color){
   mats();
   const S = VEHICLES[type] || VEHICLES.quad, col = color || S.color;
+  // v25: veículos maiores (1.4x)
+  const SCALE = 1.4;
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  g.scale.setScalar(SCALE);
   const L = [], G = [], H = [], T = [];   // carroçaria, vidros, faróis, traseiras
   const dark = 0x1f2937, black = 0x111827, chrome = 0xe5e7eb, white = 0xf8fafc;
   if(type === 'desportivo'){

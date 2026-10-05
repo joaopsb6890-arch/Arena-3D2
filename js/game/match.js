@@ -18,6 +18,7 @@ import { FortV19 } from './fnv19.js';
 import { FortV20 } from './fnv20.js';
 import { SupplyDropSystem } from './supplydrops.js';
 import { CrystalSystem, KillStreakSystem } from './crystals.js';
+import { MobileControls } from './mobile.js';
 import { DebugOverlay } from './debug.js';
 import { Sys22 } from './sys22.js';
 import { attachBackBling, applyWrap, BACKBLINGS, WRAPS } from './cosmetics22.js';
@@ -81,6 +82,7 @@ export class Match {
     this.supplyDrops = new SupplyDropSystem(this);
     this.crystals = new CrystalSystem(this);
     this.killStreaks = new KillStreakSystem(this);
+    this.mobile = new MobileControls(this);
     this.applyWrap = applyWrap;
     this._bb22 = () => { const bbK = Object.keys(BACKBLINGS), wK = Object.keys(WRAPS); for(const a of this.actors){ if(a.isPlayer) attachBackBling(a.ch, this.app.settings.backbling); else if(!a.remote && Math.random() < 0.6){ attachBackBling(a.ch, bbK[1 + Math.floor(Math.random() * (bbK.length - 1))]); if(Math.random() < 0.3) a.wrap = wK[1 + Math.floor(Math.random() * (wK.length - 1))]; } } };
     this.rules = new ModeRules(this, this.modeId); this.mode = this.rules.M;
@@ -147,6 +149,7 @@ export class Match {
     P.equip(0);
     $('deploy-overlay').classList.remove('hide');
     this.phase = 'bus';
+    if(this.mobile) this.mobile.show(true);
     this.tps.dist = 30; this.tps.yaw = Math.atan2(this.busTo.x - this.busFrom.x, this.busTo.z - this.busFrom.z);
     this.stats = { t0: performance.now(), dmg: 0 };
     this._hud(true);
@@ -283,6 +286,7 @@ export class Match {
     if(this.supplyDrops) this.supplyDrops.dispose();
     if(this.crystals) this.crystals.dispose();
     if(this.killStreaks) this.killStreaks.dispose();
+    if(this.mobile) this.mobile.show(false);
     const qt = $('quest-tracker'); if(qt) qt.innerHTML = '';
     if(this.net) this.net.dispose();
     const gc = document.getElementById('game-chat'); if(gc){ gc.classList.remove('on', 'typing'); gc.querySelector('.log').innerHTML = ''; }
@@ -350,9 +354,28 @@ export class Match {
     if(on && this.mode && !this.mode.build){ this.toast('Construção desativada neste modo'); return; }
     if(this.creative && this.creative.palette) return;
     this.build.on = on; $('build-bar').classList.toggle('on', on);
-    if(on){ P.anim.setWeapon(null); P.pickaxe.visible = false; this._makeGhost(); }
-    else { if(this.build.ghost){ this.scene.remove(this.build.ghost); this.build.ghost = null; } P._equipped = null; P.equip(P.slot); }
+    if(on){ P.anim.setWeapon(null); P.pickaxe.visible = false; this._makeGhost(); this._buildHint(); }
+    else { if(this.build.ghost){ this.scene.remove(this.build.ghost); this.build.ghost = null; } if(this._editHighlight) this._editHighlight.visible = false; P._equipped = null; P.equip(P.slot); }
     this._updateSlotsUI();
+  }
+  // v25: dica visual de construção
+  _buildHint(){
+    if(this._editHighlight) return;
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(GRID + 0.3, WALL_H + 0.3, 0.8), new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.15, depthWrite: false }));
+    hl.visible = false; this.scene.add(hl); this._editHighlight = hl;
+  }
+  // v25: destacar peça editável sob a mira
+  _updateEditHighlight(){
+    if(!this._editHighlight) return;
+    if(!this.build.on && !this.player.aiming){ this._editHighlight.visible = false; return; }
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    _ray.set(this.camera.position, dir); _ray.near = 0; _ray.far = this.tps.curDist + 22;
+    const hits = _ray.intersectObjects(this.structures.filter(s => s.alive).map(s => s.mesh), false);
+    const S = hits[0] && hits[0].object.userData.structure;
+    if(S && S.piece === 'wall' && this._editHighlight){
+      this._editHighlight.position.copy(S.mesh.position); this._editHighlight.rotation.copy(S.mesh.rotation); this._editHighlight.visible = true;
+      this._editHighlight.material.color.setHex(S.owner === this.player ? 0xa855f7 : 0x22d3ee);
+    } else { this._editHighlight.visible = false; }
   }
   // v15: aquecimento de shaders — põe na cena, por um frame, tudo o que só aparece a meio da partida
   // (armas de todos os tipos, picaretas/planadores, poções, peças de construção, fantasma, traçantes)
@@ -779,7 +802,7 @@ export class Match {
       P.jumpHeld = !!k.Space;
       if(P.sprint) P.crouch = false;
       // turbo build: segurar clique coloca peças rapidamente
-      if(!P.kart && this.build.on && this.mouse.l && this.time - (this._lastPlace || 0) > 0.12){ this.placePiece(); this._lastPlace = this.time; }
+      if(!P.kart && this.build.on && this.mouse.l && this.time - (this._lastPlace || 0) > 0.06){ this.placePiece(); this._lastPlace = this.time; }
       P.aiming = this.mouse.r && !this.build.on && P.weaponType !== 'pickaxe' && P.mode === 'ground';
       P.yaw = this.tps.yaw; P.pitch = this.tps.pitch;
       // tiro
@@ -803,6 +826,8 @@ export class Match {
     }
     // atores
     if(this.net) this.net.update(dt);
+    // v25: atores — otimização: saltar física de atores muito distantes (fora do render distance)
+    const renderDist = (this.app.settings.renderDist || 700) + 100;
     for(const a of this.actors){
       if(a.onBus && !a.remote) continue;
       a.root.userData.actor = a; a.update(dt);
@@ -819,7 +844,7 @@ export class Match {
     if(this.s22) this.s22.update(dt);
     this.rules.update(dt);
     if(this._zones && this._zones.length && (this._zoneT = (this._zoneT || 0) - dt) <= 0){
-      this._zoneT = 0.35; const q = this.app.qualityName, D = { baixa: 430, media: 580, alta: 780 }[q] || 1e9, cp = this.camera.position; let hid = 0;
+      this._zoneT = 0.35; const q = this.app.qualityName, D = { ultra_baixa: 280, muito_baixa: 350, baixa: 430, media: 580, alta: 780 }[q] || 1e9, cp = this.camera.position; let hid = 0;
       for(const z of this._zones){ const d = Math.hypot(z.c.x - cp.x, z.c.z - cp.z) - z.r; const v = d < D; if(z.o.visible !== v) z.o.visible = v; if(!v) hid++; }
       this._zoneHidden = hid;
     }
@@ -830,6 +855,10 @@ export class Match {
     if(this.crystals) this.crystals.update(dt);
     // v24b: kill streaks
     if(this.killStreaks) this.killStreaks.update(dt);
+    // v25: construção turbo + destaque de peças editáveis
+    if(this.build.on) this._updateEditHighlight();
+    // v25: controlos mobile
+    if(this.mobile) this.mobile.update();
     // mira: ponto sob a mira (raycast do centro da câmera) → o personagem aponta para lá, a mira nunca fica sobre ele
     const aimOrigin = this.camera.position.clone(), aimDir = new THREE.Vector3(); this.camera.getWorldDirection(aimDir);
     const ah = this._cast(aimOrigin, aimDir, this.tps.curDist + 1, 600, this._targets(P));
