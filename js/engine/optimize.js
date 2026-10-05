@@ -160,7 +160,7 @@ export function flattenStatic(container, protect, opts){
     if(!merged){ geos.forEach(g => g.dispose()); continue; }
     const ck = key.split('|')[0];
     let cg = cells.get(ck); if(!cg){ cg = new THREE.Group(); cg.name = 'cell_' + ck; cells.set(ck, cg); container.add(cg); }
-    const mesh = new THREE.Mesh(merged, mat); mesh.castShadow = list[0].castShadow; mesh.receiveShadow = list[0].receiveShadow; mesh.name = 'flat';
+    const mesh = new THREE.Mesh(merged, mat); mesh.castShadow = list[0].castShadow; mesh.receiveShadow = list[0].receiveShadow; mesh.name = 'flat'; mesh.userData.zone = true;
     cg.add(mesh);
     for(const ge of geos){ const c = ge.userData.src; if(c.parent) c.parent.remove(c); ge.dispose(); }
     saved += geos.length - 1;

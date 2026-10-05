@@ -22,7 +22,7 @@ const CFG = { appId: NET_APP, rtcConfig: { iceServers: [
 ] } };
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const genCode = () => Array.from({ length: 5 }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]).join('');
-export const NET_MODES = ['tdm', 'br', 'zb', 'blitz', 'gun', 'duel'];
+export const NET_MODES = ['tdm', 'br', 'br_duo', 'br_squad', 'zb', 'zb_duo', 'zb_squad', 'blitz', 'rumble', 'gun', 'duel', 'a1', 'a2', 'torneio', 'zumbis', 'corrida', 'ltm'];
 
 /** Canal público: anúncios de salas abertas */
 export class PublicLobby {
@@ -175,8 +175,8 @@ export class NetSession {
     if(!this.isHost) return;
     const M = this.app.MODES[this.settings.mode] || this.app.MODES.tdm;
     const humans = this.order.map(id => this.roster.get(id)).filter(Boolean);
-    const total = this.settings.mode === 'duel' ? 2 : M.bots + 1;
-    const nb = this.settings.bots ? Math.max(0, total - humans.length) : 0;
+    const total = this.settings.mode === 'duel' || this.settings.mode === 'a1' ? 2 : M.bots + 1;
+    const nb = this.settings.bots || M.zombies ? Math.max(0, total - humans.length) : 0;   // v22: nos Zumbis os bots SÃO os zumbis
     const roster = humans.map(p => ({ id: p.id, name: p.name, skin: p.skin, body: p.body, loadout: p.loadout }));
     for(let i = 0; i < nb; i++) roster.push({ id: 'b' + i, bot: true });
     const d = { mode: this.settings.mode, roster, busA: Math.random() * Math.PI * 2, layout: this.settings.layout || null, weather: this.app.settings.weather, time: this.app.settings.time, t: Date.now() };

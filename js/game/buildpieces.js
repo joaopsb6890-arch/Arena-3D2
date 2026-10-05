@@ -114,7 +114,7 @@ export function pieceGeometry(piece, kind, edit){
       g.translate((corner.x + apex.x) / 2, (corner.y + apex.y) / 2, (corner.z + apex.z) / 2); F.push(g);
     }
     F.push(bx(G, 0.7, 0.7, 0, 0.35, -G / 2 + 0.35), bx(G, 0.7, 0.7, 0, 0.35, G / 2 - 0.35), bx(0.7, 0.7, G, -G / 2 + 0.35, 0.35, 0), bx(0.7, 0.7, G, G / 2 - 0.35, 0.35, 0));
-    boxes.push([-G / 2, 0, -G / 2, G / 2, 0.6, G / 2]);
+    boxes.push([-G / 2, 0, -G / 2, G / 2, H * 0.5, G / 2]);   // v22: superfície em pirâmide (cone:true na física)
   }
   const gp = mergeGeometries(P), gf = mergeGeometries(F);
   const geo = mergeGeometries([gp, gf], true);

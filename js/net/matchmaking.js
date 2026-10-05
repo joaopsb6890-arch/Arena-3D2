@@ -16,12 +16,26 @@ const CFG = { appId: NET_APP, rtcConfig: { iceServers: [
 ] } };
 
 export const MM_MODES = {
-  br:    { n: 'Battle Royale', min: 2, max: 8, wait: 20 },
-  zb:    { n: 'Zero Build',    min: 2, max: 8, wait: 20 },
-  tdm:   { n: 'Mata-mata em equipa', min: 2, max: 8, wait: 15 },
-  gun:   { n: 'Corrida às Armas', min: 2, max: 8, wait: 15 },
-  duel:  { n: 'Duelo 1x1',     min: 2, max: 2, wait: 0 }
+  br:       { n: 'Battle Royale', min: 2, max: 8, wait: 20 },
+  br_duo:   { n: 'Battle Royale Duo', min: 2, max: 8, wait: 20 },
+  br_squad: { n: 'Battle Royale Esquadrão', min: 2, max: 8, wait: 25 },
+  zb:       { n: 'Zero Build',    min: 2, max: 8, wait: 20 },
+  zb_duo:   { n: 'Zero Build Duo', min: 2, max: 8, wait: 20 },
+  zb_squad: { n: 'Zero Build Esquadrão', min: 2, max: 8, wait: 25 },
+  rumble:   { n: 'Team Rumble', min: 2, max: 8, wait: 15 },
+  tdm:      { n: 'Mata-mata em equipa', min: 2, max: 8, wait: 15 },
+  gun:      { n: 'Gun Game', min: 2, max: 8, wait: 15 },
+  duel:     { n: 'Duelo 1x1',     min: 2, max: 2, wait: 0 },
+  a1:       { n: 'Arena 1v1', min: 2, max: 2, wait: 0 },
+  a2:       { n: 'Arena 2v2', min: 4, max: 4, wait: 0 },
+  torneio:  { n: 'Torneio', min: 2, max: 8, wait: 25 },
+  zumbis:   { n: 'Zumbis (cooperativo)', min: 2, max: 4, wait: 12 },
+  corrida:  { n: 'Corridas', min: 2, max: 8, wait: 12 },
+  ltm:      { n: 'Modo Limitado', min: 2, max: 8, wait: 20 },
+  creative: { n: 'Criativo', min: 2, max: 8, wait: 10 }
 };
+export const REGIONS = { auto: 'Automático', eu: 'Europa', na: 'América do Norte', sa: 'América do Sul', as: 'Ásia', oc: 'Oceânia' };
+export function autoRegion(){ const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || ''); return tz.startsWith('Europe') || tz.startsWith('Africa') || tz.startsWith('Atlantic') ? 'eu' : tz.startsWith('America/Sao_Paulo') || /Argentina|Santiago|Bogota|Lima|Montevideo|Caracas/.test(tz) ? 'sa' : tz.startsWith('America') ? 'na' : tz.startsWith('Australia') || tz.startsWith('Pacific') ? 'oc' : tz.startsWith('Asia') ? 'as' : 'eu'; }
 
 /** Canal social: presença + chat global + convites */
 export class PublicHub {
@@ -34,7 +48,7 @@ export class PublicHub {
     this._sendPres = (d, t) => pres.send(d, t ? { target: t } : undefined).catch(() => {});
     this._sendChat = (d) => chat.send(d).catch(() => {});
     this._sendInv = (d, t) => inv.send(d, { target: t }).catch(() => {});
-    pres.onMessage = (d, { peerId }) => { if(!d || d.v !== NET_VERSION) return; this.peers.set(peerId, { id: peerId, name: String(d.name || 'Jogador').slice(0, 16), skin: d.skin, st: String(d.st || '').slice(0, 30), seen: Date.now() }); this._emit(); };
+    pres.onMessage = (d, { peerId }) => { if(!d || d.v !== NET_VERSION) return; this.peers.set(peerId, { id: peerId, uid: String(d.uid || '').slice(0, 24), name: String(d.name || 'Jogador').slice(0, 16), skin: d.skin, st: String(d.st || '').slice(0, 30), seen: Date.now(), ping: (this.peers.get(peerId) || {}).ping }); this._emit(); };
     chat.onMessage = (d, { peerId }) => { if(!d || !d.text) return; const p = this.peers.get(peerId); this._push({ from: p ? p.name : String(d.name || '?').slice(0, 16), text: String(d.text).slice(0, 140) }); };
     inv.onMessage = (d, { peerId }) => { if(!d || typeof d.code !== 'string') return; const p = this.peers.get(peerId); if(this.onInvite) this.onInvite({ code: d.code.slice(0, 8), from: p ? p.name : 'Alguém', mode: d.mode }); };
     this.room.onPeerJoin = (p) => this._pres(p);
@@ -43,7 +57,14 @@ export class PublicHub {
     this._pres();
   }
   setStatus(st){ if(!this.me) this.me = {}; if(this.me.st === st) return; this.me.st = st; this._pres(); }
-  _pres(target){ if(this._sendPres && this.me) this._sendPres({ v: NET_VERSION, name: this.me.name, skin: this.me.skin, st: this.me.st || 'No lobby' }, target); }
+  _pres(target){ if(this._sendPres && this.me) this._sendPres({ v: NET_VERSION, uid: this.me.uid, name: this.me.name, skin: this.me.skin, st: this.me.st || 'No lobby' }, target); }
+  /** v22: ping real (ida e volta WebRTC) aos jogadores online; devolve a mediana */
+  async measurePing(){
+    if(!this.room || !this.room.ping) return null;
+    const ids = [...this.peers.keys()].slice(0, 6); if(!ids.length) return null;
+    const res = await Promise.all(ids.map(id => Promise.race([this.room.ping(id).then(ms => { const p = this.peers.get(id); if(p) p.ping = Math.round(ms); return ms; }), new Promise(r => setTimeout(() => r(null), 2500))]).catch(() => null)));
+    const ok = res.filter(x => x != null).sort((a, b) => a - b); return ok.length ? Math.round(ok[Math.floor(ok.length / 2)]) : null;
+  }
   say(text){ text = String(text || '').trim().slice(0, 140); if(!text || !this._sendChat) return; this._sendChat({ text, name: this.me && this.me.name }); this._push({ from: (this.me && this.me.name) || 'Eu', text, me: true }); }
   invite(peerId, code, mode){ if(this._sendInv) this._sendInv({ code, mode }, peerId); }
   list(){ return [...this.peers.values()].sort((a, b) => a.name.localeCompare(b.name)); }
@@ -55,11 +76,12 @@ export class PublicHub {
 /** Fila de matchmaking (sem bots) */
 export class Matchmaker {
   constructor(app){ this.app = app; this.room = null; this.mode = null; this.peers = new Map(); this.onChange = null; this.onMatch = null; this.state = 'idle'; }
-  join(mode, profile){
+  join(mode, profile, region){
     this.leave();
     const M = MM_MODES[mode]; if(!M) return;
+    this.region = region && region !== 'auto' ? region : autoRegion();
     this.mode = mode; this.M = M; this.profile = profile; this.t0 = Date.now() + Math.random(); this.state = 'queue'; this.startAt = 0;
-    this.room = joinRoom(CFG, 'mm-' + mode + '-v' + NET_VERSION);
+    this.room = joinRoom(CFG, 'mm-' + mode + '-' + this.region + '-v' + NET_VERSION);   // v22: fila por modo + região
     const q = this.room.makeAction('q'), go = this.room.makeAction('go');
     this._q = (d, t) => q.send(d, t ? { target: t } : undefined).catch(() => {});
     this._go = (d, t) => go.send(d, { target: t }).catch(() => {});

@@ -1,3 +1,4 @@
+import { attachBackBling } from './cosmetics22.js';
 import { applyTransmission } from '../engine/materials.js';
 // ============================================================
 // LOBBY — palco estilo Fortnite: fundo em degradê com nuvens,
@@ -148,11 +149,13 @@ export class Lobby {
     return { ch, anim, root: ch.root, lookTarget: null };
   }
   setPlayer(skin, bodyType, name, loadout){
-    const changed = this.player && this.player.skin !== skin;
+    const changed = this.player && (this.player.skin !== skin || this.player.bodyType !== bodyType || JSON.stringify(this.loadout) !== JSON.stringify(loadout));
+    // v23: não recriar o personagem se nada mudou (evita travas no armário)
+    if(this.player && !changed){ this.playerName = name; if(this.app) this.app.lobby && (this.app.lobby.playerName = name); return; }
     if(this.player){ this.scene.remove(this.player.root); disposeCharacter(this.player.ch); }
     this.loadout = loadout || this.loadout || {};
     const a = this.player = this._makeActor(skin, bodyType, this.loadout.pickaxe);
-    a.skin = skin;
+    a.skin = skin; a.bodyType = bodyType; if(this.app && this.app.settings) attachBackBling(a.ch, this.app.settings.backbling);
     this.glider = null; this.previewGlide = false;
     a.root.position.set(0, 0, 0); this.scene.add(a.root);
     a.anim.face.setExpression('happy');

@@ -7,6 +7,30 @@ Projeto em Three.js r160 com ES modules.
 - Depois de editar `js/`, é preciso regenerar o `index.html` com `npm i esbuild && node tools/build.mjs`.
 Parâmetros de URL: `?q=baixa|media|alta|ultra` (qualidade) e `?manual=1` (desliga o rAF, para testes automatizados via `window.__simulate(n, dt)`). A tecla F8 mostra FPS, draw calls e triângulos.
 
+## Novidades v22
+
+1. **Colisões** — grelha espacial (broad-phase), varrimento por eixos X → Y → Z sem atravessar paredes, deslizar ao longo das paredes, subida automática de degraus, coyote time e buffer de salto, construções com colisão correta. **F3** mostra colisores e o HUD de depuração.
+2. **Veículos** — desportivo, SUV, buggy, mota, blindado e quadriciclo low-poly com faróis, rodas e volante animados. Física com suspensão por roda, derrapagem (travão de mão), capotamento e nitro (F). Sons de motor, travagem, buzina e colisão. Entrar e sair com **E**.
+3. **Menu multijogador** — abas Solo / Duo / Squad / Criativo / Eventos, botão JOGAR animado, região, bots ligados/desligados, amigos com convite, ping real e navegação por comando.
+4. **Modos novos** — Duo, Squad, Zero Build, Team Rumble, Arena 1v1 e 2v2, Torneio, Zumbis, Corridas, Gun Game e um modo limitado que roda todos os dias.
+5. **Otimização** — IA com ticks por distância, pooling de traçantes, streaming de zonas por distância, rede com delta compression e tick adaptativo (30/20/10 Hz), HUD de depuração com FPS, ms de CPU/GPU, memória, ping e entidades.
+6. **Ecrã de carregamento real** — barra ligada às etapas (mapa, assets, shaders, rede, spawn), dicas, "À espera de jogadores", botão Cancelar e fade para o jogo.
+7. **Mais sistemas**
+   - Inventário (**I**) com raridades e arrastar-e-largar; também se arrastam armas na barra de baixo.
+   - Acessórios de armas consoante a raridade: mira red dot, punho vertical, carregador estendido e silenciador. Wraps de arma nas Configurações.
+   - Bandagens (**J**, +15 até 75 de vida) e mini escudos (**O**, +25 até 50), encontrados nos baús.
+   - DBNO em Duo, Squad e equipas: o jogador fica derrubado, rasteja e sangra; um colega segura **E** 4 s para reanimar. Os bots também reanimam.
+   - Dano de queda, vault (a correr salta-se por cima de obstáculos baixos) e reabrir o planador com **Espaço** em quedas altas.
+   - Marcadores: **L** ou o botão do meio do rato marcam o sítio para onde se aponta; com o mapa grande aberto (**M**), um clique marca no mapa. Os marcadores são enviados à equipa.
+   - Sprays (**U**) e mochilas/back bling (mochila, capa, asas, espada, escudo, guitarra, jetpack).
+   - Kill cam ao morrer e botão VER REPLAY no fim, com os últimos 5 segundos.
+   - Ranking Elo com divisões, de Bronze a Unreal, e classificação semanal na Carreira.
+   - Anti-batota básico: velocidade impossível ignorada, dano por acerto limitado a 250 e taxa de acertos limitada.
+   - Acessibilidade: legendas de som com direção, filtros para daltonismo (protanopia, deuteranopia, tritanopia), escala da interface e teclas remapeáveis.
+   - Idiomas da interface: PT, EN, ES, FR e DE.
+   - Áudio: oclusão (som atrás de paredes fica abafado), eco mais forte em interiores e música dinâmica procedural (lobby, exploração, queda, tensão, combate).
+   - Chat de voz no multijogador: segurar **K** para falar.
+
 ## Novidades v21
 
 - Mapa grande (M) com resolução própria e nomes dos locais posicionados sem sobreposição (caixas com fundo, quebra em 2 linhas quando preciso).

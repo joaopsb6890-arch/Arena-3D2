@@ -19,9 +19,15 @@
 <div id="loading">
   <svg class="logo-big" viewBox="0 0 120 120" aria-label="Arena 3D"><path d="M22 14h78l-14 26H54l-4 14h30l-12 24H44l-8 28H10z" fill="currentColor"/></svg>
   <h1>ARENA <em>3D</em></h1>
+  <div id="ld-info" class="ld-info hide"><small id="ld-mode">BATTLE ROYALE</small><b id="ld-map">Ilha</b><span id="ld-players">12 jogadores</span></div>
   <div class="load-bar"><i id="load-fill"></i></div>
   <p id="load-txt">Iniciando motor…</p>
+  <ol id="ld-steps" class="ld-steps hide"></ol>
+  <p id="ld-wait" class="ld-wait hide">À espera de jogadores (1/12)</p>
+  <p id="ld-tip" class="ld-tip hide"></p>
+  <button id="ld-cancel" class="ghost-btn ld-cancel hide">Cancelar</button>
 </div>
+<div id="ld-fade"></div>
 
 <!-- ============ LOBBY / MENUS ============ -->
 <header id="topnav">
@@ -34,6 +40,8 @@
     <button class="nav-tab" data-go="challenges">DESAFIOS</button>
     <button class="nav-tab" data-go="studio">ESTÚDIO</button>
     <button class="nav-tab" data-go="career">CARREIRA</button>
+    <button class="nav-tab" data-go="battlepass">PASSE</button>
+    <button class="nav-tab" data-go="liveevent">EVENTO</button>
     <button class="nav-tab" data-go="settings">CONFIG</button>
   </nav>
   <div class="profile">
@@ -52,7 +60,7 @@
       <div class="l-card quests"><h6>MISSÕES DIÁRIAS <small>+XP</small></h6><ul id="daily-quests"></ul><button class="l-link" data-go="challenges">Ver todos os desafios</button></div>
       <div class="l-card news" id="news-card"><h6>NOVIDADES</h6><div class="news-rot"><p><b>Pesca</b>Procura os cardumes no lago e no rio (E) e apanha peixes de escudo, vida e voadores.</p><p><b>Táticos</b>Granada de Impulso, Splash de Escudo, Fumo e Arbusto. T troca, X usa.</p><p><b>Mais rápido</b>Corrida e deslize mais velozes. Desliza nas descidas para ganhar ainda mais velocidade.</p></div></div>
     </div>
-    <div class="season"><b>CAPÍTULO 5</b><span>TEMPORADA 4 · Ilha Renovada</span></div>
+    <div class="season"><b>TEMPORADA 1</b><span>CAPÍTULO 1 · Ilha Renovada</span></div>
   </div>
   <div class="lobby-right">
     <button id="cine-btn" class="ghost-btn">Câmera cinematográfica</button>
@@ -112,16 +120,26 @@
 
 <section class="panel" id="panel-multi">
   <div class="mp-wrap">
-    <div id="mp-quick" class="mp-grid mp-quick">
-      <div class="card-panel mm-card">
-        <div class="mp-row"><h2>PARTIDA RÁPIDA <span class="mm-tag">SEM BOTS</span></h2></div>
-        <p class="mp-status">Matchmaking: entra numa fila e joga só contra pessoas reais. Quando houver jogadores suficientes a partida começa sozinha.</p>
-        <div id="mm-modes" class="mm-modes"></div>
+    <div id="mp-quick" class="mp-grid mp-quick mpx">
+      <div class="card-panel mpx-main">
+        <nav id="mpx-tabs" class="mpx-tabs" role="tablist">
+          <button data-tab="solo" class="on">Solo</button><button data-tab="duo">Duo</button><button data-tab="squad">Squad</button><button data-tab="creative">Criativo</button><button data-tab="events">Eventos</button>
+        </nav>
+        <div id="mpx-modes" class="mpx-modes"></div>
+        <div class="mpx-opts">
+          <label class="mpx-sel"><span>Região</span><select id="mpx-region"></select></label>
+          <label class="mpx-sw"><input id="mpx-bots" type="checkbox"><i></i><span>Bots <b id="mpx-bots-lab">desligados</b></span></label>
+          <div class="mpx-ping" id="mpx-ping" title="Ping medido ida e volta (WebRTC) até aos jogadores online"><i></i><span>-- ms</span></div>
+        </div>
+        <button id="mpx-play" class="mpx-play"><span class="mpx-play-t">JOGAR</span><small id="mpx-play-sub">Battle Royale · só pessoas</small></button>
+        <div id="mm-modes" class="mm-modes hide"></div>
         <div id="mm-status" class="mm-status hide"><b id="mm-title">À PROCURA…</b><span id="mm-sub"></span><div id="mm-dots"></div><button id="mm-cancel" class="ghost-btn">Cancelar</button></div>
+        <p class="mpx-hint">Comando: D-pad/analógico para navegar · A escolher · B voltar · LB/RB mudar de separador</p>
       </div>
       <div class="card-panel hub-card">
-        <div class="mp-row"><h2>LOBBY PÚBLICO</h2><span id="hub-count" class="hub-count">0 online</span></div>
+        <div class="mp-row"><nav class="mpx-subtabs" id="hub-tabs"><button data-ht="online" class="on">ONLINE <span id="hub-count" class="hub-count">0</span></button><button data-ht="friends">AMIGOS <span id="fr-count" class="hub-count">0</span></button></nav></div>
         <ul id="hub-list" class="hub-list"></ul>
+        <ul id="fr-list" class="hub-list hide"></ul>
         <div id="hub-chat" class="hub-chat"></div>
         <form id="hub-form" class="hub-form"><input id="hub-in" maxlength="140" placeholder="Fala com todos os que estão online…" autocomplete="off"><button class="yellow">ENVIAR</button></form>
       </div>
@@ -169,6 +187,35 @@
 
 <section class="panel" id="panel-career">
   <div class="card-panel"><h2>CARREIRA</h2><div id="career-stats" class="career-stats"></div></div>
+</section>
+
+<section class="panel" id="panel-battlepass">
+  <div class="card-panel bp-panel">
+    <h2>PASSE DE BATALHA</h2>
+    <div class="bp-season"><b>TEMPORADA 1</b><span>CAPÍTULO 1</span></div>
+    <div class="bp-progress">
+      <div class="bp-level-info"><span>Nível atual: <b id="bp-cur-lvl">1</b></span><span id="bp-next-info">Próximo nível: 1000 XP</span></div>
+      <div class="bp-bar-big"><i id="bp-bar-fill" style="width:0%"></i></div>
+    </div>
+    <div class="bp-tiers" id="bp-tiers"></div>
+    <p class="bp-note">Ganha XP jogando partidas para subir de nível e desbloquear recompensas.</p>
+  </div>
+</section>
+
+<section class="panel" id="panel-liveevent">
+  <div class="card-panel event-panel">
+    <h2>EVENTO AO VIVO</h2>
+    <div class="event-stage" id="event-stage">
+      <div class="event-content" id="event-content">
+        <div class="event-icon">!</div>
+        <h3 id="event-title">Aguarde...</h3>
+        <p id="event-desc" class="event-desc">O próximo evento ao vivo começa em breve.</p>
+        <div class="event-timer" id="event-timer"></div>
+        <div class="event-bar"><i id="event-bar-fill" style="width:0%"></i></div>
+        <button id="event-join-btn" class="yellow">PARTICIPAR</button>
+      </div>
+    </div>
+  </div>
 </section>
 
 <section class="panel" id="panel-settings">
@@ -243,10 +290,370 @@
   </div>
 </div></div>
 <div id="lock-prompt"><b>CLIQUE PARA CONTINUAR</b><span>O navegador precisa de um clique para prender o rato no jogo</span></div>
+
+<!-- ============ LOGIN GOOGLE ============ -->
+<div id="login-overlay" class="overlay hide">
+  <div class="login-card">
+    <svg class="logo-big" viewBox="0 0 120 120" aria-label="Arena 3D"><path d="M22 14h78l-14 26H54l-4 14h30l-12 24H44l-8 28H10z" fill="currentColor"/></svg>
+    <h2>ARENA <em>3D</em></h2>
+    <p class="login-sub">Entra com a tua conta Google para sincronizar o progresso</p>
+    <button id="google-login-btn" class="login-btn">
+      <svg viewBox="0 0 48 48" width="24" height="24"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+      Entrar com Google
+    </button>
+    <button id="skip-login-btn" class="ghost-btn">Jogar sem conta</button>
+    <div id="login-error" class="login-error hide"></div>
+    <div class="login-info"><small>O progresso sincronizado requer que o Google Provider esteja ativado no Firebase Console.</small></div>
+  </div>
+</div>
 <div id="pause-overlay" class="overlay hide"><div class="ov-card"><h2>PAUSADO</h2><button id="btn-resume" class="yellow">CONTINUAR</button><button id="btn-leave">SAIR DA PARTIDA</button><p>O rato fica preso ao jogo quando continuar. Esc volta a soltá-lo.</p></div></div>
 <div id="victory" class="overlay result hide"><div class="ov-card"><h1 class="win">#1 VITÓRIA ROYALE</h1><p class="res-sub">Você foi o melhor da ilha</p><div class="res-stats"></div><button class="yellow btn-again">JOGAR NOVAMENTE</button><button class="btn-lobby">VOLTAR AO LOBBY</button></div></div>
 <div id="defeat" class="overlay result hide"><div class="ov-card"><h1 class="lose">ELIMINADO</h1><p class="res-sub">Mais sorte na próxima</p><div class="res-stats"></div><button class="yellow btn-again">JOGAR NOVAMENTE</button><button class="btn-lobby">VOLTAR AO LOBBY</button></div></div>
 
 <script type="module" src="js/main.js"></script>
-</body>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://perplexity.localhost","http://localhost:1420","http://127.0.0.1:1420","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  const DEFAULT_LINE_HEIGHT = 16;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="position:relative;left:-${scrollX}px;top:-${scrollY}px">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_BY") {
+      const { deltaX, deltaY, deltaMode } = event.data;
+      if (!scrollForwarding || !Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+      if (deltaMode !== 0 && deltaMode !== 1 && deltaMode !== 2) return;
+      const lineHeight =
+        parseFloat(getComputedStyle(document.documentElement).lineHeight) || DEFAULT_LINE_HEIGHT;
+      const scaleX = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerWidth : 1;
+      const scaleY = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerHeight : 1;
+      // The selection overlay receives the wheel event instead of this iframe.
+      // Instant scrolling preserves trackpad deltas even on smooth-scroll sites.
+      window.scrollBy({ left: deltaX * scaleX, top: deltaY * scaleY, behavior: "instant" });
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
 </html>

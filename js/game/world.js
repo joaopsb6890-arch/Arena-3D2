@@ -169,7 +169,12 @@ export class World {
       for(const g of this._staticMerge) g.traverse(o => { if(o.isMesh){ if(!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); if(o.geometry.boundingSphere.radius > 2.5 && o.material !== this.poi.mats.glass) this.raycastTargets.push(o); } });
       this._mergeStatic(this._staticMerge);
       this.poi.loot.chests.forEach(([x, z, r, y]) => this.addChest(x, z, r, y));
-      this.poi.loot.floor.forEach(([x, y, z]) => { const t = Math.random(); if(t < 0.62) this.spawnPickup(GUNS[Math.floor(Math.random() * GUNS.length)], V(x, 0, z), 1, { y: y + 1.5, rar: rollRarity() }); else this.spawnPickup(['potion', 'medkit', 'ammo', 'grenade'][Math.floor(Math.random() * 4)], V(x, 0, z), t < 0.8 ? 1 : 2, { y: y + 1.5 }); });
+      this.poi.loot.floor.forEach(([x, y, z]) => {
+        // v23: não colocar loot dentro de casas
+        const inHouse = this.housePlan.some(h => Math.abs(x - h.x) < h.w * GRID / 2 + 2 && Math.abs(z - h.z) < h.d * GRID / 2 + 2);
+        if(inHouse) return;
+        const t = Math.random(); if(t < 0.62) this.spawnPickup(GUNS[Math.floor(Math.random() * GUNS.length)], V(x, 0, z), 1, { y: y + 1.5, rar: rollRarity() }); else this.spawnPickup(['potion', 'medkit', 'ammo', 'grenade'][Math.floor(Math.random() * 4)], V(x, 0, z), t < 0.8 ? 1 : 2, { y: y + 1.5 });
+      });
       this._river();
       this._volcano();
       this._trees(); this._rocks(); this._props();
@@ -358,7 +363,10 @@ export class World {
         r.position.set(hp.x, H + Math.tan(pitch) * rw / 2 - 0.2, hp.z + sd * rw / 2 - sd * 0.6);
         r.rotation.x = sd * pitch; r.castShadow = true; r.receiveShadow = true; g.add(r); this.raycastTargets.push(r);
       });
-      this.physics.addBox(V(x0 - 1, H, z0 - 1), V(x0 + W + 1, H + 0.5, z0 + D + 1));
+      // telhado de duas águas — colliders em rampa para não atravessar
+      const ridgeH = Math.tan(pitch) * rw;
+      this.physics.addBox(V(x0 - 1.2, H, z0 - 1.2), V(x0 + W + 1.2, H + ridgeH + 0.6, hp.z), { ramp: { axis: 'z', dir: 1 } });
+      this.physics.addBox(V(x0 - 1.2, H, hp.z), V(x0 + W + 1.2, H + ridgeH + 0.6, z0 + D + 1.2), { ramp: { axis: 'z', dir: -1 } });
       // chaminé
       addBox(x0 + W * 0.75, H + 5, hp.z + 2, 2.2, 7, 2.2, Mat.rock(0x7c6f64));
       hp.smoke = this.particles.addEmitter({ type: 'dust', rate: 4, pos: V(x0 + W * 0.75, H + 9, hp.z + 2), opt: { color: 0xcfcfcf, n: 1, power: 1.6 } });

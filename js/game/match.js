@@ -16,6 +16,9 @@ import { FortSystems } from './fnsystems.js';
 import { FortExtras, TACTICALS } from './fnextra.js';
 import { FortV19 } from './fnv19.js';
 import { FortV20 } from './fnv20.js';
+import { DebugOverlay } from './debug.js';
+import { Sys22 } from './sys22.js';
+import { attachBackBling, applyWrap, BACKBLINGS, WRAPS } from './cosmetics22.js';
 import { collectRefs, mergeStatic, flattenStatic } from '../engine/optimize.js';
 import { applyTransmission } from '../engine/materials.js';
 import { makeBattleBus } from './bus.js';
@@ -69,6 +72,10 @@ export class Match {
     this.fx2 = new FortExtras(this);
     this.v19 = new FortV19(this);
     this.v20 = new FortV20(this);
+    this.debug = new DebugOverlay(this);
+    this.s22 = new Sys22(this);
+    this.applyWrap = applyWrap;
+    this._bb22 = () => { const bbK = Object.keys(BACKBLINGS), wK = Object.keys(WRAPS); for(const a of this.actors){ if(a.isPlayer) attachBackBling(a.ch, this.app.settings.backbling); else if(!a.remote && Math.random() < 0.6){ attachBackBling(a.ch, bbK[1 + Math.floor(Math.random() * (bbK.length - 1))]); if(Math.random() < 0.3) a.wrap = wK[1 + Math.floor(Math.random() * (wK.length - 1))]; } } };
     this.rules = new ModeRules(this, this.modeId); this.mode = this.rules.M;
     if(this.layout) this.layoutObjs = buildLayout(this, this.layout, false);
     if(this.mode.creative) this.creative = new CreativeTools(this);
@@ -79,6 +86,9 @@ export class Match {
       const t0 = performance.now(), prot = collectRefs([this], { skip: ['scene', 'camera', 'session', 'net'] });
       let n = 0; for(const g of [this.world.group, this.v19 && this.v19.group, this.v20 && this.v20.group, this.fs && this.fs.group, this.fx2 && this.fx2.group]) if(g){ n += flattenStatic(g, prot, { cell: 96 }); n += mergeStatic(g, prot); }
       this._mergeInfo = { saved: n, ms: Math.round(performance.now() - t0) };
+      // v22: "streaming" por zona — as células estáticas fundidas (96×96) longe da câmara deixam de ser desenhadas
+      this._zones = [];
+      for(const g of [this.world.group, this.v19 && this.v19.group, this.v20 && this.v20.group, this.fs && this.fs.group]) if(g) g.traverse(o => { if(o.isMesh && o.userData.zone){ if(!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); const s = o.geometry.boundingSphere.clone().applyMatrix4(o.matrixWorld); if(s.radius < 140) this._zones.push({ o, c: s.center, r: s.radius }); } });
     } catch(e){ console.warn('mergeStatic', e); }
   }
   // ---------------- início ----------------
@@ -140,7 +150,19 @@ export class Match {
   }
   weaponStats(w){ return WEAPON_STATS[w]; }
   isAlly(a, b){ return this.rules ? this.rules.isAlly(a, b) : false; }
+  /** v22: teclas remapeadas (Configurações → Controlos) */
+  _remap(e){ const R = this.app.keymap; if(!R || !R[e.code]) return e; const o = e; return { code: R[o.code], key: o.key, repeat: o.repeat, button: o.button, target: o.target, preventDefault: () => o.preventDefault() }; }
   _finish(win, killer, sub){ this.endMatch(win, killer, sub); }
+  /** v22: modo espectador — segue um colega vivo (ou o próximo, ao clicar) */
+  spectate(next){
+    const P = this.player, list = this.actors.filter(a => a !== P && a.alive && (this.isAlly(P, a) || !this.mode.squad));
+    let el = document.getElementById('spec-hud');
+    if(!list.length){ this.specTarget = null; if(el) el.classList.add('hide'); return; }
+    const i = next && this.specTarget ? (list.indexOf(this.specTarget) + 1) % list.length : 0;
+    this.specTarget = list[i];
+    if(!el){ el = document.createElement('div'); el.id = 'spec-hud'; document.getElementById('hud').appendChild(el); }
+    el.classList.remove('hide'); el.innerHTML = '<small>A ASSISTIR</small><b>' + this.specTarget.name + '</b><span>Clica para trocar de jogador · ' + list.length + ' vivo(s)</span>';
+  }
   _makeBus(){ const g = makeBattleBus(); this.scene.add(g); return g; }
   jumpFromBus(ac){
     ac.onBus = false; ac.root.visible = true;
@@ -154,11 +176,16 @@ export class Match {
     const el = this.app.renderer.r.domElement;
     this._kd = (e) => {
       if(!this.active) return;
+      e = this._remap(e);
       if(document.activeElement && document.activeElement.id === 'game-chat-in') return;
       if(this.session && e.code === 'Enter' && !this.paused){ e.preventDefault(); this.openChat(); return; }
       this.keys[e.code] = true;
       const P = this.player; if(!P) return;
-      if(['Space', 'Tab', 'KeyF'].includes(e.code)) e.preventDefault();
+      if(['Space', 'Tab', 'KeyF', 'F3'].includes(e.code)) e.preventDefault();
+      if(e.code === 'F3' && !e.repeat){ this.debug.toggle(); return; }
+      if(this.s22 && !this.paused && this.phase !== 'over' && this.s22.onKey(e)) { e.preventDefault(); return; }
+      // v22: dentro de um veículo — F = nitro, H = buzina, Q/números/construção desligados
+      if(P.kart && ['KeyF', 'KeyQ', 'KeyH', 'KeyG', 'KeyX', 'KeyZ', 'KeyC', 'KeyR', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(e.code)) return;
       if(this.creative && e.code === 'Escape' && this.creative.menuOpen){ this.creative.toggleMenu(false); return; }
       if(this.creative && !this.paused && this.creative.onKey(e)) return;
       if(e.code === 'Escape' || e.code === 'KeyP'){ const wasPaused = this.paused; this.togglePause(); if(wasPaused && !this.paused) this.app.lockPointer(); return; }
@@ -182,9 +209,9 @@ export class Match {
       if(e.code === 'KeyH') P.useItem('potion');
       if(e.code === 'KeyG') P.useItem('medkit');
       if(e.code === 'KeyB'){ const own = ['danceDefault', 'floss', 'celebrate', 'laugh', ...[...(this.app.owned || [])].filter(x => x.startsWith('emote:')).map(x => x.slice(6))]; const em = this.app.settings.emote && (own.includes(this.app.settings.emote) || ['wave', 'clap', 'think', 'point'].includes(this.app.settings.emote)) ? this.app.settings.emote : own[Math.floor(Math.random() * own.length)]; P.anim.play(em); if(this.net) this.net.sendEmote(P, em); }
-      if(e.code === 'KeyM') $('minimap').classList.toggle('big');
+      if(e.code === 'KeyM'){ const big = $('minimap').classList.toggle('big'); if(this.s22) this.s22.mapToggled(big); }
     };
-    this._ku = (e) => { this.keys[e.code] = false; };
+    this._ku = (e) => { e = this._remap(e); this.keys[e.code] = false; if(this.s22) this.s22.onKeyUp(e); };
     this._md = (e) => {
       if(!this.active || this.paused) return;
       if(e.target.closest && e.target.closest('.ui-btn, button')) return;
@@ -192,7 +219,9 @@ export class Match {
       this.app.lockPointer();
       if(this.creative && this.creative.onMouse(e)) return;
       if(this.phase === 'bus'){ this.jumpFromBus(this.player); return; }
+      if(e.button === 1 && this.s22 && this.player && this.player.alive){ e.preventDefault(); this.s22.pingAim(); return; }
       if(e.button === 0) this.mouse.l = true;
+      if(e.button === 0 && this.player && !this.player.alive && this.specTarget){ this.spectate(true); return; }
       if(e.button === 2) this.mouse.r = true;
       if(e.button === 0 && this.build.on){ this.placePiece(); this._lastPlace = this.time; }
       if(e.button === 2 && this.build.on) this.cycleBuildMat();
@@ -218,13 +247,14 @@ export class Match {
     this._plc = () => {
       const locked = document.pointerLockElement === el;
       this.app.onLockChange(locked);
-      if(this.active && !locked && !this.app.pointerFallback && this.phase !== 'over' && !this.paused && !(this.creative && this.creative.menuOpen)) this.togglePause(true);
+      if(this.active && !locked && !this.app.pointerFallback && this.phase !== 'over' && !this.paused && !(this.creative && this.creative.menuOpen) && !(this.s22 && this.s22.uiOpen)) this.togglePause(true);
     };
     this._blur = () => { if(this.active && this.phase !== 'over' && !this.paused) this.togglePause(true); this.keys = {}; this.mouse.l = this.mouse.r = false; };
     addEventListener('blur', this._blur);
     document.addEventListener('pointerlockchange', this._plc);
   }
   dispose(){
+    if(this.rules && this.rules.X) this.rules.X.dispose();
     removeEventListener('keydown', this._kd); removeEventListener('keyup', this._ku); removeEventListener('mouseup', this._mu); removeEventListener('mousemove', this._mm); removeEventListener('contextmenu', this._cm);
     const el = this.app.renderer.r.domElement; el.removeEventListener('mousedown', this._md); el.removeEventListener('wheel', this._wh);
     document.removeEventListener('pointerlockchange', this._plc); removeEventListener('blur', this._blur);
@@ -237,6 +267,8 @@ export class Match {
     if(this.fx2) this.fx2.dispose();
     if(this.v19) this.v19.dispose();
     if(this.v20) this.v20.dispose();
+    if(this.debug) this.debug.dispose();
+    if(this.s22) this.s22.dispose();
     const qt = $('quest-tracker'); if(qt) qt.innerHTML = '';
     if(this.net) this.net.dispose();
     const gc = document.getElementById('game-chat'); if(gc){ gc.classList.remove('on', 'typing'); gc.querySelector('.log').innerHTML = ''; }
@@ -379,6 +411,7 @@ export class Match {
   }
   placePiece(actor, piece, yaw, matKind){
     actor = actor || this.player; piece = piece || this.build.piece; yaw = yaw ?? actor.yaw;
+    if(actor.downed) return null;
     // v16: 3 materiais. Jogador usa o selecionado; bots usam o que têm mais
     let kind = matKind || (actor.isPlayer ? (this.build.mat || 'wood') : ['wood', 'stone', 'metal'].reduce((a, b) => (actor.mats[b] || 0) > (actor.mats[a] || 0) ? b : a, 'wood'));
     if((actor.mats[kind] || 0) < 10){ if(actor.isPlayer){ if(!this._noMatT || this.time - this._noMatT > 1.2){ this.toast(BUILD_MATS[kind].label + ' insuficiente'); this._noMatT = this.time; } } return null; }
@@ -413,7 +446,7 @@ export class Match {
     for(const b of pieceGeometry(S.piece, S.matKind, S.edit).boxes){
       let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
       for(const [lx, lz] of [[b[0], b[2]], [b[3], b[2]], [b[0], b[5]], [b[3], b[5]]]){ const wx = lx * cs + lz * sn, wz = -lx * sn + lz * cs; x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); z0 = Math.min(z0, wz); z1 = Math.max(z1, wz); }
-      const extra = S.piece === 'ramp' ? { ramp: (() => { const axis = Math.abs(fx) > 0 ? 'x' : 'z'; return { axis, dir: axis === 'x' ? fx : fz }; })() } : undefined;
+      const extra = S.piece === 'ramp' ? { ramp: (() => { const axis = Math.abs(fx) > 0 ? 'x' : 'z'; return { axis, dir: axis === 'x' ? fx : fz }; })() } : S.piece === 'cone' ? { cone: true } : undefined;
       S.boxes.push(this.physics.addBox(new THREE.Vector3(p.x + x0, p.y + b[1], p.z + z0), new THREE.Vector3(p.x + x1, p.y + b[4], p.z + z1), extra));
     }
     S.box = S.boxes[0];
@@ -500,6 +533,11 @@ export class Match {
     const yaw = Math.atan2(enemy.root.position.x - bot.root.position.x, enemy.root.position.z - bot.root.position.z);
     this.placePiece(bot, Math.random() < 0.7 ? 'wall' : 'ramp', yaw);
   }
+  botBuildRamp(bot){
+    if(this.mode && !this.mode.build) return;
+    this.placePiece(bot, 'ramp', bot.yaw);
+    this.placePiece(bot, 'floor', bot.yaw);
+  }
   // ---------------- combate ----------------
   _targets(shooter){
     // o terreno é tratado analiticamente (heightfield) — muito mais barato que raycast em 28k triângulos
@@ -530,7 +568,8 @@ export class Match {
   fireHitscan(shooter, origin, dir, st, muzzle){
     const pellets = st.pellets || 1;
     const moving = Math.hypot(shooter.body.vel.x, shooter.body.vel.z) > 4;
-    const spread = st.spread * (shooter.aiming ? 0.45 : 1) * (moving ? 1.6 : 1) * (shooter.body.grounded ? 1 : 2.2);
+    const AT = (shooter.att && shooter.att[shooter.weaponType]) || [];   // v22: acessórios
+    const spread = st.spread * (AT.includes('mira') && shooter.aiming ? 0.7 : 1) * (shooter.aiming ? 0.45 : 1) * (moving ? 1.6 : 1) * (shooter.body.grounded ? 1 : 2.2);
     const targets = this._targets(shooter);
     let anyHit = false, head = false, firstEnd = null;
     for(let i = 0; i < pellets; i++){
@@ -563,20 +602,22 @@ export class Match {
     if(this.net && firstEnd) this.net.sendFire(shooter, shooter.weaponType, firstEnd, anyHit);
     const scale = shooter.weaponType === 'shotgun' ? 1.5 : shooter.weaponType === 'sniper' ? 1.4 : 1;
     this.particles.emit('muzzle', muzzle, { dir, scale });
-    const snd = shooter.weaponType; this.audio.play(snd, muzzle, { vol: shooter.isPlayer ? 0.85 : 0.9, reverb: 0.5 });
+    const snd = shooter.weaponType, sil = AT.includes('silenciador'); this.audio.play(snd, muzzle, { vol: (shooter.isPlayer ? 0.85 : 0.9) * (sil ? 0.35 : 1), reverb: 0.5, lowpass: sil ? 1800 : undefined });
+    if(this.s22) this.s22.onShot(shooter, muzzle);
     if(shooter.isPlayer){
-      this.tps.addTrauma(snd === 'shotgun' ? 0.35 : snd === 'sniper' ? 0.45 : 0.12); this.tps.kick(snd === 'shotgun' ? 3 : 1.2);
-      this.tps.pitch += (snd === 'sniper' ? 0.03 : snd === 'shotgun' ? 0.025 : 0.006) * (shooter.aiming ? 0.6 : 1);
+      const rc = AT.includes('punho') ? 0.6 : 1;
+      this.tps.addTrauma((snd === 'shotgun' ? 0.35 : snd === 'sniper' ? 0.45 : 0.12) * rc); this.tps.kick((snd === 'shotgun' ? 3 : 1.2) * rc);
+      this.tps.pitch += (snd === 'sniper' ? 0.03 : snd === 'shotgun' ? 0.025 : 0.006) * (shooter.aiming ? 0.6 : 1) * rc;
       if(anyHit){ this._hitmarker(head); this.audio.play(head ? 'headshot' : 'hit', null, { vol: 0.5 }); }
       this._crossBloom = Math.min(1, (this._crossBloom || 0) + (snd === 'rifle' ? 0.18 : 0.6));
     }
     // bots ouvem tiros
-    for(const b of this.bots) if(b.alive && b !== shooter && b.root.position.distanceTo(shooter.root.position) < 160) b.brain.hear(shooter.root.position);
+    for(const b of this.bots) if(b.alive && b !== shooter && b.root.position.distanceTo(shooter.root.position) < (sil ? 55 : 160)) b.brain.hear(shooter.root.position);
   }
   pickaxeHit(actor, origin, dir){
     const o = actor.root.position.clone().setY(actor.root.position.y + 5);
     const d = actor.isPlayer ? dir.clone() : new THREE.Vector3(Math.sin(actor.yaw), 0, Math.cos(actor.yaw));
-    const h = this._cast(o, d, 0, 9, this._targets(actor));
+    const h = this._cast(o, d, 0, 14, this._targets(actor));
     if(!h) return;
     const obj = h.object;
     const heavy = actor.swingKind === 2, mult = heavy ? 1.6 : 1;
@@ -585,7 +626,7 @@ export class Match {
     if(pk.trail && pk.trail !== 0xffffff) this.particles.emit('magic', h.point, { color: pk.trail, n: heavy ? 8 : 4 });
     if(heavy){ this.particles.emit('dust', h.point, { n: 8, power: 1.2 }); if(actor.isPlayer) this.tps.addTrauma(0.18); }
     if(obj.userData.character){
-      const v = obj.userData.character.root.userData.actor; const dm = Math.round(20 * mult); if(v && v !== actor && !this.isAlly(actor, v)){ v.takeDamage(dm, actor, false); if(actor.isPlayer){ this._hitmarker(false); this._damageNumber(h.point, dm, false, v.shield > 0); } if(v.isPlayer) this._hurtFx(actor); }
+      const v = obj.userData.character.root.userData.actor; const dm = Math.round(35 * mult); if(v && v !== actor && !this.isAlly(actor, v)){ v.takeDamage(dm, actor, false); if(actor.isPlayer){ this._hitmarker(false); this._damageNumber(h.point, dm, false, v.shield > 0); } if(v.isPlayer) this._hurtFx(actor); }
       this.audio.play('hit', h.point, { vol: 0.6 });
     } else if(obj.userData.structure){ this.damageStructure(obj.userData.structure, 50 * mult, h.point); this.audio.play('pickHit', h.point, { vol: 0.8 }); }
     else {
@@ -600,7 +641,9 @@ export class Match {
     if(actor.isPlayer) this.tps.addTrauma(0.1);
   }
   _tracer(from, to, life){
-    const m = new THREE.Mesh(this.tracerGeo, this.tracerMat.clone());
+    // v22: pooling — os traçadores são reutilizados em vez de criados/destruídos a cada tiro
+    this._trPool = this._trPool || [];
+    const m = this._trPool.pop() || new THREE.Mesh(this.tracerGeo, this.tracerMat.clone()); m.visible = true;
     m.position.copy(from); m.lookAt(to); m.scale.set(1, 1, from.distanceTo(to));
     m.userData.noProbe = true;
     this.scene.add(m); this.tracers.push({ m, t: life, life });
@@ -613,7 +656,7 @@ export class Match {
     this._killfeed(killer, victim);
     if(killer && killer.isPlayer && !this.isAlly(killer, victim)){ this.toast('ELIMINOU ' + victim.name.toUpperCase(), 'kill'); this.tps.addTrauma(0.15); this.quest('kill'); }
     const M = this.mode;
-    if(M.respawn || this.modeId === 'duel'){
+    if(M.respawn || M.rounds || M.zombies || M.race || this.modeId === 'duel'){
       // modos com renascimento: sem loot de armas (evita acumular), só munição/escudo
       if(!M.gunList) this.world.spawnPickup(Math.random() < 0.5 ? 'ammo' : 'potion', victim.root.position.clone().add(new THREE.Vector3(2, 0, -2)), 30);
       const vis = victim; setTimeout(() => { if(!vis.alive) vis.root.visible = false; }, 1600);
@@ -630,12 +673,17 @@ export class Match {
     ['impulso', 'escudo', 'fumo', 'arbusto'].forEach((k, i) => { if(victim.tac && victim.tac[k] > 0) this.world.spawnPickup(k, victim.root.position.clone().add(new THREE.Vector3(-3 + i * 2, 0, 4)), victim.tac[k], vy); });
     setTimeout(() => { victim.root.visible = false; }, 1600);
     const target = M.killTarget || KILLS_TO_WIN;
-    if(victim.isPlayer) setTimeout(() => this.endMatch(false, killer), 1800);
-    else if(this.player.alive && (this.player.kills >= target || this.actors.filter(a => a.alive).length === 1)) setTimeout(() => this.endMatch(true), 1200);
+    // v22: equipas (Duo/Esquadrão) — a partida acaba quando sobra uma equipa; se morreres com colegas vivos ficas a assistir
+    const enemies = this.rules.enemiesAlive(this.player), allies = this.rules.alliesAlive(this.player);
+    if(victim.isPlayer){ const kc = (fn) => setTimeout(() => this.s22 ? this.s22.killcam(killer, fn) : fn(), 1200); if(allies > 0 && this.spectate){ kc(() => this.spectate()); } else kc(() => this.endMatch(false, killer)); }
+    else if(!this.player.alive && this.mode.squad){ if(allies === 0) setTimeout(() => this.endMatch(false, killer), 1500); else if(enemies === 0) setTimeout(() => this.endMatch(true, null, 'A tua equipa venceu'), 1200); }
+    else if(this.player.alive && (this.player.kills >= target || enemies === 0)) setTimeout(() => this.endMatch(true), 1200);
   }
   // ---------------- interação ----------------
   interact(){
     const P = this.player;
+    if(P.downed) return;
+    if(this.s22 && this.s22.interact(P)) return;
     if(this.v20 && this.v20.interact(P)) return;
     if(this.v19 && this.v19.interact(P)) return;
     if(this.fx2 && this.fx2.interact(P)) return;
@@ -651,6 +699,7 @@ export class Match {
     if(!this.world.openChest(c)) return;
     if(this.net) this.net.sendChest(c);
     if(actor.isPlayer) this.quest('chest');
+    { const r = Math.random(); if(r < 0.45){ actor.bandages = Math.min(15, (actor.bandages || 0) + 5); if(actor.isPlayer) this.toast('+5 bandagens'); } else if(r < 0.8){ actor.minis = Math.min(6, (actor.minis || 0) + 3); if(actor.isPlayer) this.toast('+3 mini escudos'); } }
     this.audio.play('chest', c.pos, { vol: 0.9 });
     if(this.sys) this.sys.addGold(actor, 30 + Math.floor(Math.random() * 4) * 10, c.pos);
     // v16: tabela de loot com raridades + granadas/fenda
@@ -666,7 +715,9 @@ export class Match {
   }
   pickup(actor, pk){
     const t = pk.type;
-    if(WEAPON_STATS[t]){ const idx = actor.give(t, pk.rar || 0); if(actor.isPlayer) { actor.equip(idx); this.toast(WEAPON_STATS[t].name + ' ' + RARITY[pk.rar || 0].label.toLowerCase() + ' coletado'); } }
+    if(actor.brain && actor.brain.melee && (WEAPON_STATS[t] || t === 'grenade')) return;   // v22: zumbis não apanham armas
+    { const L = this.rules && this.rules.X && this.rules.X.ltm; if(L && L.onlyGun && WEAPON_STATS[t] && t !== L.onlyGun && t !== 'pickaxe'){ if(actor.isPlayer) this.toast('Modo Limitado: só ' + WEAPON_STATS[L.onlyGun].name); return; } }
+    if(WEAPON_STATS[t]){ const idx = actor.give(t, pk.rar || 0); if(this.s22) this.s22.rollAttachments(actor, t, pk.rar || 0); if(actor.isPlayer) { actor.equip(idx); this.toast(WEAPON_STATS[t].name + ' ' + RARITY[pk.rar || 0].label.toLowerCase() + ' coletado'); } }
     else if(t === 'ammo'){ GUNS.forEach(k => actor.reserve[k] = (actor.reserve[k] || 0) + ({ rifle: 30, shotgun: 6, sniper: 3, smg: 36, pistol: 16 })[k]); if(actor.isPlayer) this.toast('Munição +'); }
     else if(t === 'grenade'){ actor.grenades += pk.amount || 1; if(actor.isPlayer) this.toast('Granadas +' + (pk.amount || 1) + ' (X para lançar)'); }
     else if(TACTICALS[t] && actor.tac){ actor.tac[t] += pk.amount || 1; if(actor.isPlayer){ if(!(actor.tac[actor.tacSel] > 0)) actor.tacSel = t; this.toast(TACTICALS[t].n + ' +' + (pk.amount || 1) + ' (T troca, X usa)'); } }
@@ -689,6 +740,7 @@ export class Match {
   }
   // ---------------- loop ----------------
   update(dt){
+    if(this.s22 && this.s22.kc){ this.s22.updateKillcam(dt); this.particles.update(dt); return; }
     if(this.paused && !this.net) return;
     this.time += dt;
     const P = this.player, W = this.world;
@@ -710,12 +762,14 @@ export class Match {
       P.sprint = !!k.ShiftLeft && P.moveInput.y > 0 && !P.aiming;
       P.jumpHeld = !!k.Space;
       if(P.sprint) P.crouch = false;
+      // turbo build: segurar clique coloca peças rapidamente
+      if(!P.kart && this.build.on && this.mouse.l && this.time - (this._lastPlace || 0) > 0.12){ this.placePiece(); this._lastPlace = this.time; }
       P.aiming = this.mouse.r && !this.build.on && P.weaponType !== 'pickaxe' && P.mode === 'ground';
       P.yaw = this.tps.yaw; P.pitch = this.tps.pitch;
       // tiro
       const st = P.stats;
-      if(!this.build.on && st && (this._fireOnce || (this.mouse.l && st.auto))){ this._fireOnce = false; this._playerFire(); }
-      else if(!this.build.on && this.mouse.l && P.weaponType === 'pickaxe') this._playerFire();
+      if(!P.kart && !this.build.on && st && (this._fireOnce || (this.mouse.l && st.auto))){ this._fireOnce = false; this._playerFire(); }
+      else if(!P.kart && !this.build.on && this.mouse.l && P.weaponType === 'pickaxe') this._playerFire();
       this._fireOnce = false;
       // coleta automática de munição/materiais
       for(const pk of W.pickups.slice()) if(['ammo', 'wood', 'stone', 'metal'].includes(pk.type) && pk.pos.distanceTo(P.root.position) < 3.5) this.pickup(P, pk);
@@ -724,7 +778,12 @@ export class Match {
     for(const b of this.bots){
       if(b.onBus || b.remote) continue;
       if(b.alive && b.mode !== 'ground' && b.dropTarget){ _v.subVectors(b.dropTarget, b.root.position); b.yaw = Math.atan2(_v.x, _v.z); b.moveInput.set(0, Math.hypot(_v.x, _v.z) > 10 ? 1 : 0); }
-      else if(b.alive) b.brain.update(dt);
+      else if(b.alive){
+        // v22: IA em "ticks" — bots longe do jogador pensam a 10 Hz (perto: todos os frames); o movimento continua suave
+        const d2 = (b.body.pos.x - P.body.pos.x) ** 2 + (b.body.pos.z - P.body.pos.z) ** 2;
+        if(d2 < 160 * 160 || b.brain.target){ b._aiAcc = 0; b.brain.update(dt); }
+        else { b._aiAcc = (b._aiAcc || 0) + dt; if(b._aiAcc >= 0.1){ b.brain.update(b._aiAcc); b._aiAcc = 0; } }
+      }
     }
     // atores
     if(this.net) this.net.update(dt);
@@ -740,7 +799,14 @@ export class Match {
     if(this.fx2) this.fx2.update(dt);
     if(this.v19) this.v19.update(dt);
     if(this.v20) this.v20.update(dt);
+    if(this.debug) this.debug.update(dt);
+    if(this.s22) this.s22.update(dt);
     this.rules.update(dt);
+    if(this._zones && this._zones.length && (this._zoneT = (this._zoneT || 0) - dt) <= 0){
+      this._zoneT = 0.35; const q = this.app.qualityName, D = { baixa: 430, media: 580, alta: 780 }[q] || 1e9, cp = this.camera.position; let hid = 0;
+      for(const z of this._zones){ const d = Math.hypot(z.c.x - cp.x, z.c.z - cp.z) - z.r; const v = d < D; if(z.o.visible !== v) z.o.visible = v; if(!v) hid++; }
+      this._zoneHidden = hid;
+    }
     if(this.creative) this.creative.update(dt);
     // mira: ponto sob a mira (raycast do centro da câmera) → o personagem aponta para lá, a mira nunca fica sobre ele
     const aimOrigin = this.camera.position.clone(), aimDir = new THREE.Vector3(); this.camera.getWorldDirection(aimDir);
@@ -773,6 +839,7 @@ export class Match {
     if(this.phase === 'bus' && this.bus){
       this.tps.update(dt, this.bus.position.clone().add(new THREE.Vector3(0, 4, 0)), { dist: 42 });
     } else if(this.director.active){ this.director.update(dt); }
+    else if(!P.alive && this.specTarget){ if(!this.specTarget.alive) this.spectate(); if(this.specTarget) this.tps.update(dt, this.specTarget.root.position, { dist: 15 }); }
     else this.tps.update(dt, P.root.position, { ads, sprint: P.sprint, crouch: P.crouch, scope: ads && P.weaponType === 'sniper', dist });
     $('sniper-scope').classList.toggle('on', ads && P.weaponType === 'sniper' && this.tps.ads > 0.8);
     P.root.visible = !(ads && P.weaponType === 'sniper' && this.tps.ads > 0.8) && !P.onBus;
@@ -784,7 +851,7 @@ export class Match {
     this.particles.update(dt);
     this.audio.updateListener(this.camera);
     if(this.audio.ctx){ this.audio.setLoopVolume('rain', (this.env.state.rain || 0) * 0.5); this.audio.setLoopVolume('wind', 0.03 + Wind.strength * 0.006 + (P.mode !== 'ground' ? 0.25 : 0)); }
-    for(let i = this.tracers.length - 1; i >= 0; i--){ const t = this.tracers[i]; t.t -= dt; t.m.material.opacity = Math.max(0, t.t / t.life) * 0.9; if(t.t <= 0){ this.scene.remove(t.m); t.m.material.dispose(); this.tracers.splice(i, 1); } }
+    for(let i = this.tracers.length - 1; i >= 0; i--){ const t = this.tracers[i]; t.t -= dt; t.m.material.opacity = Math.max(0, t.t / t.life) * 0.9; if(t.t <= 0){ this.scene.remove(t.m); this.tracers.splice(i, 1); if((this._trPool = this._trPool || []).length < 64) this._trPool.push(t.m); else t.m.material.dispose(); } }
     this._hudUpdate(dt);
   }
   _playerFire(){
@@ -805,7 +872,9 @@ export class Match {
     const el = $(win ? 'victory' : 'defeat');
     el.querySelector('.res-stats').innerHTML = `<div><b>${P.kills}</b><span>Abates</span></div><div><b>${this.stats.dmg}</b><span>Dano</span></div><div><b>${this.mode.bus ? '#' + (win ? 1 : alive + 1) : this.mode.short}</b><span>${this.mode.bus ? 'Colocação' : 'Modo'}</span></div><div><b>${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</b><span>Tempo</span></div>`;
     el.querySelector('h1').textContent = this.mode.bus ? (win ? '#1 VITÓRIA ROYALE' : 'ELIMINADO') : (win ? 'VITÓRIA' : 'DERROTA');
-    el.querySelector('.res-sub').textContent = sub || (!win && killer ? 'Eliminado por ' + killer.name : win ? 'Vitória Royale' : '');
+    const extra = (this.rules && this.rules.X ? this.rules.X.onEnd(win, win ? 1 : alive + 1) : '') + (this.s22 && !this.mode.creative && !this.mode.race ? this.s22.rank(win, win ? 1 : alive + 1) : '');
+    { let rb = el.querySelector('.replay-btn'); if(!rb && this.s22){ rb = document.createElement('button'); rb.className = 'replay-btn ghost-btn'; rb.textContent = 'VER REPLAY'; const host = el.querySelector('.res-stats'); host.parentNode.insertBefore(rb, host.nextSibling); } if(rb) rb.onclick = () => { if(this.s22 && !this.s22.replay()) this.toast('Sem replay disponível'); }; }
+    el.querySelector('.res-sub').textContent = (sub || (!win && killer ? 'Eliminado por ' + killer.name : win ? 'Vitória Royale' : '')) + extra;
     const ms = $('mode-score'); if(ms) ms.style.display = 'none';
     el.classList.remove('hide');
     this.app.saveResult({ win, kills: P.kills, place: win ? 1 : alive + 1, mode: this.modeId });
@@ -884,7 +953,7 @@ export class Match {
     const pk = !c && W.pickups.find(p => p.pos.distanceTo(P.root.position) < 5 && !['ammo', 'wood', 'stone', 'metal'].includes(p.type));
     const hint = $('interact-hint');
     const drop = this.sys && this.sys.drops.find(d => d.landed && !d.opened && d.pos.distanceTo(P.root.position) < 6);
-    const fh = !c && !pk && !drop && this.fs ? ((this.v20 && this.v20.hint(P)) || (this.v19 && this.v19.hint(P)) || (this.fx2 && this.fx2.hint(P)) || this.fs.hint(P)) : null;
+    const fh = !c && !pk && !drop && this.fs ? ((this.s22 && this.s22.hint(P)) || (this.v20 && this.v20.hint(P)) || (this.v19 && this.v19.hint(P)) || (this.fx2 && this.fx2.hint(P)) || this.fs.hint(P)) : null;
     hint.classList.toggle('show', !!(c || pk || drop || fh));
     const hh = fh ? fh : drop ? '<kbd>E</kbd> Abrir entrega aérea' : c ? '<kbd>E</kbd> Abrir baú' : pk ? `<kbd>E</kbd> Pegar ${WEAPON_STATS[pk.type] ? `<b style="color:#${RARITY[pk.rar || 0].color.toString(16).padStart(6, '0')}">${WEAPON_STATS[pk.type].name} (${RARITY[pk.rar || 0].label})</b>` : ({ medkit: 'kit médico', grenade: 'granadas', rift: 'Fenda Portátil', impulso: 'Granada de Impulso', escudo: 'Splash de Escudo', fumo: 'Granada de Fumo', arbusto: 'Arbusto' })[pk.type] || 'poção de escudo'}` : null;
     if(hh && hint._h !== hh){ hint._h = hh; hint.innerHTML = hh; }
@@ -957,7 +1026,7 @@ export class Match {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(tx(w.storm.cx), tz(w.storm.cz), w.storm.r * scale, 0, Math.PI * 2); ctx.stroke();
     if(w.storm.shrinking || w.storm.timer < 35){ ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(tx(w.storm.tcx), tz(w.storm.tcz), w.storm.target * scale, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     if(this.bus){ ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.moveTo(tx(this.busFrom.x), tz(this.busFrom.z)); ctx.lineTo(tx(this.busTo.x), tz(this.busTo.z)); ctx.stroke(); }
-    if(this.sys) for(const mk of this.sys.minimapMarks().concat(this.fs ? this.fs.minimapMarks(P) : [], this.v19 ? this.v19.minimapMarks(P) : [], this.v20 ? this.v20.minimapMarks(P) : [])){ ctx.fillStyle = mk.c; ctx.beginPath(); if(mk.sq) ctx.rect(tx(mk.x) - mk.s / 2, tz(mk.z) - mk.s / 2, mk.s, mk.s); else ctx.arc(tx(mk.x), tz(mk.z), mk.s / 2 + 0.5, 0, Math.PI * 2); ctx.fill(); if(mk.sq){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); } }
+    if(this.sys) for(const mk of this.sys.minimapMarks().concat(this.s22 ? this.s22.minimapMarks() : [], this.fs ? this.fs.minimapMarks(P) : [], this.v19 ? this.v19.minimapMarks(P) : [], this.v20 ? this.v20.minimapMarks(P) : [])){ ctx.fillStyle = mk.c; ctx.beginPath(); if(mk.sq) ctx.rect(tx(mk.x) - mk.s / 2, tz(mk.z) - mk.s / 2, mk.s, mk.s); else ctx.arc(tx(mk.x), tz(mk.z), mk.s / 2 + 0.5, 0, Math.PI * 2); ctx.fill(); if(mk.sq){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); } }
     if(this.mode.teams) for(const b of this.bots) if(b.alive && this.isAlly(P, b)){ ctx.fillStyle = '#60a5fa'; ctx.beginPath(); ctx.arc(tx(b.root.position.x), tz(b.root.position.z), 3.5, 0, Math.PI * 2); ctx.fill(); }
     // jogador
     const px = tx(P.root.position.x), pz = tz(P.root.position.z);

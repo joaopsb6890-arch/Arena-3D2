@@ -13,6 +13,7 @@
 //  Pacotes compactos (arrays + números arredondados): ~70 bytes por
 //  ator por tick → 12 atores ≈ 13 KB/s por peer.
 // ============================================================
+import { VEH_IDS } from '../game/vehicles.js';
 import * as THREE from 'three';
 
 const MODE_C = { ground: 0, freefall: 1, glide: 2 }, MODE_N = ['ground', 'freefall', 'glide'];
@@ -35,19 +36,31 @@ export class NetSync {
     if(!a.local){ a.remote = true; a.net = { buf: [], hp: 100, shield: 0 }; a.jumpAt = 99; }
   }
   owns(a){ return !!a && a.local; }
+  sendReady(){ this.s.ev({ k: 'ready' }); }
+  readyCount(){ return 1 + (this.ready ? this.ready.size : 0); }
+  humans(){ return this.start && this.start.roster ? this.start.roster.filter(e => !e.bot).length : 1; }
   // ---------------- envio ----------------
   update(dt){
     this.t += dt; this.acc += dt;
-    if(this.acc >= TICK){
+    // v22: taxa de envio adaptativa — 30 Hz normal; 20 Hz com muitos jogadores ou ping alto; 10 Hz com a aba escondida
+    if((this._adT = (this._adT || 0) - dt) <= 0){ this._adT = 1; const n = this.m.actors.filter(a => a.remote).length, pg = this.s.pingMs ? this.s.pingMs() : null;
+      this.tickDt = document.hidden ? 1 / 10 : (n > 5 || (pg && pg > 160)) ? 1 / 20 : TICK; }
+    if(this.acc >= (this.tickDt || TICK)){
       this.acc = 0; this.tick = (this.tick || 0) + 1;
-      const list = [];
+      const list = []; this._last = this._last || new Map(); let skipped = 0;
       for(const a of this.m.actors){
         if(!a.local) continue;
         if(!a.isPlayer && (this.tick & 1)) continue;   // bots do anfitrião a 15 Hz (poupa rede)
-        const b = a.body, f = (a.crouch ? 1 : 0) | (a.aiming ? 2 : 0) | (a.alive ? 4 : 0) | (a.onBus ? 8 : 0) | (b.grounded ? 16 : 0) | (a.sprint ? 32 : 0) | (a.root.visible ? 64 : 0) | (a.climbing ? 128 : 0) | (a.rail ? 256 : 0) | (a.kart ? 512 : 0);
-        list.push([a.netId, r1(b.pos.x), r2(b.pos.y), r1(b.pos.z), r2(a.yaw), r2(a.pitch), r1(b.vel.x), r1(b.vel.y), r1(b.vel.z), MODE_C[a.mode] || 0, W_C[a.using > 0 ? 'none' : a.weaponType] ?? 0, f, Math.round(a.hp), Math.round(a.shield), r2(a.fallInput.dive), r2(a.fallInput.bank)]);
+        const b = a.body, f = (a.crouch ? 1 : 0) | (a.aiming ? 2 : 0) | (a.alive ? 4 : 0) | (a.onBus ? 8 : 0) | (b.grounded ? 16 : 0) | (a.sprint ? 32 : 0) | (a.root.visible ? 64 : 0) | (a.climbing ? 128 : 0) | (a.rail ? 256 : 0) | (a.downed ? 1024 : 0) | (a.kart ? 512 : 0);
+        const row = [a.netId, r1(b.pos.x), r2(b.pos.y), r1(b.pos.z), r2(a.yaw), r2(a.pitch), r1(b.vel.x), r1(b.vel.y), r1(b.vel.z), MODE_C[a.mode] || 0, W_C[a.using > 0 ? 'none' : a.weaponType] ?? 0, f, Math.round(a.hp), Math.round(a.shield), r2(a.fallInput.dive), r2(a.fallInput.bank), a.kart ? VEH_IDS.indexOf(a.kart.type) : -1];
+        // v22: compressão delta — quem está parado e sem mudanças não é reenviado (estado-chave a cada 1 s)
+        const L = this._last.get(a.netId), key = row.slice(1).join(',');
+        if(L && L.key === key && this.t - L.t < 1){ skipped++; continue; }
+        this._last.set(a.netId, { key, t: this.t });
+        list.push(row);
       }
       if(list.length) this.s.sendState({ t: r2(this.t), a: list });
+      this.sent = (this.sent || 0) + list.length; this.skipped = (this.skipped || 0) + skipped;
     }
     if(this.isHost && this.m.mode.storm){
       this.stormAcc += dt;
@@ -71,6 +84,10 @@ export class NetSync {
       if(n.offset === undefined){ n.offset = off; n.jit = 0.02; }
       if(off < n.offset) n.offset += (off - n.offset) * 0.5; else n.offset += (off - n.offset) * 0.02;
       n.jit += (Math.abs(off - n.offset) - n.jit) * 0.1;
+      // v22: anti-batota básico — velocidade impossível (fora de veículos/saltos/autocarro) é ignorada e contada
+      const L = n.buf[n.buf.length - 1];
+      if(L && !(s[11] & (8 | 512)) && MODE_N[s[9]] === 'ground' && d.t > L.t - n.offset + 0.01){ const dtp = d.t - (L.t - n.offset), dx = s[1] - L.s[1], dz = s[3] - L.s[3], sp = Math.hypot(dx, dz) / dtp;
+        if(sp > 140 && dtp < 1.5){ n.cheat = (n.cheat || 0) + 1; if(n.cheat === 10 && this.m.toast) this.m.toast('Anti-batota: movimento suspeito de ' + a.name); if(n.cheat > 3) return; } else if(n.cheat) n.cheat = Math.max(0, n.cheat - 0.05); }
       n.buf.push({ t: d.t + n.offset, s }); if(n.buf.length > 12) n.buf.shift();
       n.hp = s[12]; n.shield = s[13];
       a.hp = s[12]; a.shield = s[13];
@@ -97,7 +114,7 @@ export class NetSync {
     }
     const cur = B ? B.s : s;
     n.vel = n.vel || new THREE.Vector3(); n.vel.set(cur[6], cur[7], cur[8]);
-    n.mode = MODE_N[cur[9]] || 'ground'; n.weapon = W_N[cur[10]] || 'pickaxe'; n.flags = cur[11]; n.dive = cur[14]; n.bank = cur[15];
+    n.mode = MODE_N[cur[9]] || 'ground'; n.weapon = W_N[cur[10]] || 'pickaxe'; n.flags = cur[11]; n.dive = cur[14]; n.bank = cur[15]; n.veh = cur[16] >= 0 ? VEH_IDS[cur[16]] : null;
   }
   /** chamado pelo Actor.update de um boneco remoto (substitui a física) */
   step(a, dt){
@@ -106,7 +123,7 @@ export class NetSync {
     b.vel.copy(n.vel);
     b.grounded = !!(n.flags & 16);
     a.yaw += wrap(n.yaw - a.yaw) * (1 - Math.exp(-dt * 20)); a.pitch = n.pitch;
-    a.crouch = !!(n.flags & 1); a.aiming = !!(n.flags & 2); a.sprint = !!(n.flags & 32); a.climbing = !!(n.flags & 128); a.remoteRail = !!(n.flags & 256); a.remoteKart = !!(n.flags & 512); if(this.m.v20) this.m.v20.remoteKart(a);
+    a.downed = !!(n.flags & 1024); a.crouch = !!(n.flags & 1) || a.downed; a.aiming = !!(n.flags & 2); a.sprint = !!(n.flags & 32); a.climbing = !!(n.flags & 128); a.remoteRail = !!(n.flags & 256); a.remoteKart = !!(n.flags & 512); a.remoteVeh = n.veh || 'quad'; if(this.m.v20) this.m.v20.remoteKart(a);
     a.fallInput.dive = n.dive || 0; a.fallInput.bank = n.bank || 0;
     if(a.alive && n.mode !== a.mode){ const prev = a.mode; a.setMode(n.mode); if(n.mode === 'ground' && prev === 'glide') a.anim.play('landGlide'); }
     if(a.alive){
@@ -136,9 +153,15 @@ export class NetSync {
         for(const b of m.bots) if(b.alive && b.brain && b.root.position.distanceTo(a.root.position) < 160) b.brain.hear(a.root.position);
         break;
       }
+      case 'ping': { if(m.s22) m.s22.mark(new THREE.Vector3(d.x, d.y, d.z), !!d.map, true); break; }
+      case 'spray': { if(m.s22) m.s22.spray(d); break; }
+      case 'ready': { (this.ready = this.ready || new Set()).add(peer); break; }   // v22: ecrã de carregamento à espera de todos
       case 'swing': { const a = A(d.id); if(a && a.remote && a.alive){ a.anim.play(['pickaxeSwing1', 'pickaxeSwing2', 'pickaxeSwing3'][d.c] || 'pickaxeSwing1', { speed: 1.1 }); a.swingT = 0.4; m.audio.play('woosh', a.root.position, { vol: 0.5 }); } break; }
       case 'hit': {
         const t = A(d.t), by = A(d.by); if(!t || !t.local || !t.alive) break;
+        // v22: anti-batota — dano limitado e taxa de acertos por peer
+        const rl = (this._hitRate = this._hitRate || {}); const now = performance.now(); const R = rl[peer] = rl[peer] && now - rl[peer].t < 1000 ? rl[peer] : { t: now, n: 0 }; if(++R.n > 25) break;
+        d.d = Math.max(0, Math.min(250, +d.d || 0));
         t.takeDamage(d.d, by || null, !!d.h, true);
         if(t.isPlayer) m._hurtFx(by || null);
         if(t.brain && by) t.brain.hear(by.root.position);

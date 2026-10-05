@@ -16,6 +16,7 @@ import { heightAt, MAP_R } from './world.js';
 import { Mat } from '../engine/materials.js';
 import { LOCATIONS, ROADS } from './pois.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { vehicleMesh, vehicleStep, EngineSound, VEHICLES, VEH_IDS } from './vehicles.js';
 import { RARITY, GUNS } from './weapons.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -90,6 +91,7 @@ export class FortV20 {
     this.reveal = 0; this.ride = null; this._padCd = 0; this._portCd = 0;
     if(!this.full) return;
     (poi.karts || []).forEach(k => this._kart(...k));
+    this._roadVehicles();
     (poi.cannons || []).forEach(c => this.cannons.push({ pos: V(c.x, c.y, c.z), dx: c.dx, dz: c.dz }));
     (poi.catapults || []).forEach(c => this._catapult(c));
     (poi.balloons || []).forEach(([x, z]) => this._balloon(x, z));
@@ -102,11 +104,29 @@ export class FortV20 {
   }
   _ground(x, z){ return this.W.physics.groundAt(x, z, 999, 0); }
   // ---------------- construção dos objetos ----------------
-  _kart(x, z, yaw){
-    const cols = [0xf97316, 0x22c55e, 0x3b82f6, 0xe11d48, 0xfacc15, 0xa855f7];
-    const g = kartMesh(cols[this.karts.length % cols.length]); const y = this._ground(x, z);
+  _kart(x, z, yaw, type){
+    // v22: veículos variados (desportivo, SUV, buggy, mota, blindado, quadriciclo)
+    const order = ['desportivo', 'buggy', 'suv', 'mota', 'quad', 'desportivo', 'blindado', 'mota', 'buggy', 'suv'];
+    type = type || order[this.karts.length % order.length];
+    const pal = { desportivo: [0xef4444, 0xf97316, 0xe11d48, 0x0ea5e9], suv: [0x2563eb, 0xf8fafc, 0x111827, 0x16a34a], buggy: [0xfacc15, 0x22c55e, 0xf97316], mota: [0x22c55e, 0xa855f7, 0xef4444], blindado: [0x4d7c0f, 0x57534e], quad: [0xf97316, 0x3b82f6] }[type];
+    const g = vehicleMesh(type, pal[this.karts.length % pal.length]); const y = this._ground(x, z);
     g.position.set(x, y, z); g.rotation.y = yaw || 0; this.group.add(g);
-    this.karts.push({ g, pos: g.position, yaw: yaw || 0, sp: 0, driver: null, wheels: g.userData.wheels });
+    const S = VEHICLES[type];
+    this.karts.push({ g, type, S, pos: g.position, home: new THREE.Vector3(x, y, z), homeYaw: yaw || 0, yaw: yaw || 0, sp: 0, driver: null, hp: S.hp, wheels: g.userData.wheels });
+  }
+  /** v22: mais veículos ao longo das estradas */
+  _roadVehicles(){
+    let i = 0;
+    for(const r of ROADS){ const [ax, az, bx, bz] = r; const L = Math.hypot(bx - ax, bz - az); if(L < 160) continue;
+      const t = 0.35 + (i % 3) * 0.15, x = ax + (bx - ax) * t, z = az + (bz - az) * t, ang = Math.atan2(bx - ax, bz - az);
+      this._kart(x + Math.cos(ang) * 9, z - Math.sin(ang) * 9, ang); if(++i >= 12) break; }
+  }
+  eject(a, msg){ const k = a.kart; if(!k) return; this.exitKart(a); a.body.vel.y = 14; a.body.grounded = false; if(msg && a.isPlayer) this.m.toast(msg); }
+  destroyVehicle(k){
+    if(k.dead) return; const pos = k.g.getWorldPosition(new THREE.Vector3());
+    if(k.driver){ const d = k.driver; this.eject(d, 'Veículo destruído'); d.takeDamage(35, null); }
+    if(this.m.fs && this.m.fs.explode) this.m.fs.explode(pos, 9, 40, null); else this.m.particles.emit('fire', pos, { n: 30 });
+    k.dead = 45; k.g.visible = false;
   }
   _catapult(c){
     const y = this._ground(c.x, c.z), g = new THREE.Group(); g.position.set(c.x, y, c.z); g.rotation.y = c.ry || 0;
@@ -180,8 +200,13 @@ export class FortV20 {
   _speedPads(){
     const mat = Mat.emissive(0x22d3ee, 2.0), base = Mat.polymer(0x0f172a);
     const list = ROADS.filter((_, i) => i % 2 === 0).slice(0, 16);
+    const houses = this.W.housePlan || [];
+    const inHouse = (x, z) => houses.some(h => Math.abs(x - h.x) < h.w * 16 / 2 + 3 && Math.abs(z - h.z) < h.d * 16 / 2 + 3);
     for(const [x0, z0, x1, z1] of list){
-      const t = 0.5, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t, yaw = Math.atan2(x1 - x0, z1 - z0), y = heightAt(x, z);
+      let t = 0.5, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
+      // v23: desvia se cair numa casa
+      if(inHouse(x, z)){ let found = false; for(const tt of [0.3, 0.7, 0.2, 0.8, 0.4, 0.6]){ const nx = x0 + (x1 - x0) * tt, nz = z0 + (z1 - z0) * tt; if(!inHouse(nx, nz)){ x = nx; z = nz; found = true; break; } } if(!found) continue; }
+      const yaw = Math.atan2(x1 - x0, z1 - z0), y = heightAt(x, z);
       const g = new THREE.Group(); g.position.set(x, y + 0.08, z); g.rotation.y = yaw;
       const p = new THREE.Mesh(new THREE.BoxGeometry(5, 0.2, 7), base); g.add(p);
       for(let i = 0; i < 3; i++){ const ch = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1.6, 3), mat); ch.rotation.x = Math.PI / 2; ch.scale.set(1, 1, 0.12); ch.position.set(0, 0.2, -2 + i * 2); g.add(ch); }
@@ -206,71 +231,30 @@ export class FortV20 {
   }
   // ---------------- quadriciclo ----------------
   _enterKart(P, k){
+    if(k.dead) return;
     k.driver = P; P.kart = k; P.slideT = 0; P.crouch = false;
-    P.body.pos.set(k.pos.x, k.pos.y + 0.6, k.pos.z); P.root.position.copy(P.body.pos);
-    this.group.remove(k.g); P.root.add(k.g); k.g.position.set(0, -0.6, 0); k.g.rotation.set(0, 0, 0);
-    k.sp = 0; k.vyaw = k.yaw; this.m.toast('W/S acelerar · A/D virar · SHIFT derrapar (turbo) · F nitro · ESPAÇO saltar · E sair'); this.m.audio.play('build', P.body.pos, { vol: 0.5, rate: 0.6 });
+    const S = k.S || VEHICLES.quad;
+    P._r0 = P.body.radius; P.body.radius = S.radius; P.body.lift = S.seat;
+    P.body.pos.set(k.pos.x, k.pos.y + S.seat, k.pos.z); P.root.position.copy(P.body.pos);
+    this.group.remove(k.g); P.root.add(k.g); k.g.position.set(0, -S.seat, 0); k.g.rotation.set(0, 0, 0);
+    k.sp = 0; k.vyaw = k.yaw; k.flipped = 0; k.roll = 0; k.rollV = 0;
+    if(P.isPlayer){ if(!this.eng) this.eng = new EngineSound(this.m.audio); this.eng.start(k.type); }
+    this.m.toast(S.n.toUpperCase() + ' · E para sair'); this.m.audio.play('build', P.body.pos, { vol: 0.5, rate: 0.6 });
     if(this.m.quest) this.m.quest('drive');
   }
   exitKart(P){
     const k = P.kart; if(!k) return; P.kart = null; k.driver = null;
+    if(P._r0) P.body.radius = P._r0; P.body.lift = 0; P.body.pos.y -= (k.S ? k.S.seat : 0);
+    if(P.isPlayer && this.eng){ this.eng.stop(); this.eng.horn(false); this.eng.skid(0); }
     P.root.remove(k.g); this.group.add(k.g); this._kartHUD(null);
     k.g.position.copy(P.body.pos).setY(this._ground(P.body.pos.x, P.body.pos.z)); k.g.rotation.set(0, k.yaw, 0); k.pos = k.g.position; k.drifting = 0; if(k.g.userData.body) k.g.userData.body.rotation.set(0, 0, 0);
     P.body.pos.x += Math.cos(k.yaw) * 3.4; P.body.pos.z -= Math.sin(k.yaw) * 3.4; P.body.pos.y += 1; P.body.vel.set(0, 0, 0);
   }
   kartStep(a, dt, mi){
-    // v21: condução melhorada — aderência lateral (o carro desliza um pouco nas curvas), DERRAPAGEM com SHIFT
-    // que carrega um mini-turbo (azul → laranja), NITRO com F (barra que recarrega), suspensão e inclinação da carroçaria,
-    // alinhamento ao terreno, controlo no ar e câmara mais afastada.
-    const k = a.kart, b = a.body, ud = k.g.userData;
-    k.nitro = k.nitro ?? 1; k.drift = k.drift || 0; k.vyaw = k.vyaw ?? k.yaw;
-    const actual = Math.hypot(b.vel.x, b.vel.z);
-    if(Math.abs(k.sp) > 14 && actual < Math.abs(k.sp) * 0.3 && b.grounded){ k.sp *= 0.45; this.m.tps.addTrauma(0.25); this.m.audio.play('hit', b.pos, { vol: 0.5, rate: 0.6 }); }   // bateu
-    const nitro = this.m.keys && this.m.keys.KeyF && k.nitro > 0.02 && mi.y > -0.1;
-    const top = (a.boostT > 0 ? 74 : 62) + (nitro ? 22 : 0) + (k.turboT > 0 ? 14 : 0);
-    const acc = mi.y > 0.1 ? (k.sp < 20 ? 46 : 30) : mi.y < -0.1 ? (k.sp > 1 ? -75 : -26) : 0;
-    if(b.grounded){ k.sp += (acc + (nitro ? 40 : 0) + (k.turboT > 0 ? 30 : 0)) * dt; if(!acc && !nitro) k.sp -= k.sp * Math.min(1, dt * 0.8); }
-    if(nitro){ k.nitro = Math.max(0, k.nitro - dt / 3.2); if(Math.random() < 0.6) this.m.particles.emit('impact', b.pos.clone().add(new THREE.Vector3(-Math.sin(k.yaw) * 3, 1.3, -Math.cos(k.yaw) * 3)), { color: 0x60a5fa, n: 2 }); }
-    else k.nitro = Math.min(1, k.nitro + dt / 9);
-    if(k.turboT > 0) k.turboT -= dt;
-    k.sp = THREE.MathUtils.clamp(k.sp, -18, Math.max(top, Math.min(k.sp, top + 10) - dt * 20));
-    const spd = Math.abs(k.sp), dir = Math.sign(k.sp || 1);
-    // derrapagem
-    const wantDrift = a.sprint && b.grounded && spd > 24 && Math.abs(mi.x) > 0.2;
-    if(wantDrift && !k.drifting){ k.drifting = Math.sign(mi.x); k.drift = 0; b.vel.y = Math.max(b.vel.y, 5); }
-    if(k.drifting && (!a.sprint || spd < 16)){ if(k.drift > 0.8){ k.turboT = k.drift > 1.8 ? 1.4 : 0.8; this.m.audio.play('woosh', b.pos, { vol: 0.6 }); this.m.tps.kick(4); } k.drifting = 0; k.drift = 0; }
-    let steerAmt = -mi.x * (2.0 - Math.min(1, spd / 70) * 0.95) * dir * Math.min(1, spd / 5);
-    if(k.drifting){ steerAmt = (-k.drifting * 1.25 - mi.x * 0.75) * dir; k.drift += dt; const col = k.drift > 1.8 ? 0xf97316 : k.drift > 0.8 ? 0x38bdf8 : 0xe5e7eb; if(Math.random() < 0.7) for(const sx of [-1.9, 1.9]) this.m.particles.emit('impact', b.pos.clone().add(new THREE.Vector3(Math.cos(k.yaw) * sx - Math.sin(k.yaw) * 1.7, 0.3, -Math.sin(k.yaw) * sx - Math.cos(k.yaw) * 1.7)), { color: col, n: 2 }); }
-    if(!b.grounded) steerAmt *= 0.4;
-    k.yaw += steerAmt * dt;
-    // direção da velocidade segue a orientação com aderência (menor a derrapar)
-    const grip = !b.grounded ? 0.6 : k.drifting ? 2.6 : 9;
-    let dy = k.yaw - k.vyaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); k.vyaw += dy * Math.min(1, dt * grip);
-    if(b.grounded || Math.abs(b.vel.x) + Math.abs(b.vel.z) < 1){ b.vel.x = Math.sin(k.vyaw) * k.sp; b.vel.z = Math.cos(k.vyaw) * k.sp; }
-    if(a.jumpHeld && b.grounded && !this._kj){ b.vel.y = 22; b.grounded = false; this.m.audio.play('jump', b.pos, { vol: 0.5, rate: 0.8 }); }
-    this._kj = a.jumpHeld;
-    // visual: rodas, direção, suspensão, inclinação, alinhamento ao terreno
-    for(const w of ud.wheels) w.rotation.y -= k.sp * dt / 0.88;
-    const steerVis = THREE.MathUtils.clamp(-mi.x * 0.45, -0.45, 0.45); for(const s of ud.steer) s.rotation.y = THREE.MathUtils.damp(s.rotation.y, steerVis, 12, dt);
-    const body = ud.body, lat = THREE.MathUtils.clamp(steerAmt * spd * 0.004, -0.14, 0.14);
-    k._acc = THREE.MathUtils.damp(k._acc || 0, (spd - (k._lsp || 0)) / Math.max(dt, 1e-3), 6, dt); k._lsp = spd;
-    body.rotation.z = THREE.MathUtils.damp(body.rotation.z, lat, 8, dt);
-    body.rotation.x = THREE.MathUtils.damp(body.rotation.x, THREE.MathUtils.clamp(-k._acc * 0.0025, -0.07, 0.07), 6, dt);
-    body.position.y = THREE.MathUtils.damp(body.position.y, b.grounded ? Math.sin(this._t * 18) * Math.min(1, spd / 60) * 0.04 : 0.15, 10, dt);
-    this._ka = (this._ka || 0) + dt;
-    if(this._ka > 0.08){ this._ka = 0; const P = b.pos, f = 2.2, sx = Math.sin(k.yaw), cz = Math.cos(k.yaw), gr = (x, z) => this.W.physics.groundAt(x, z, P.y + 3, 0);
-      const hf = gr(P.x + sx * f, P.z + cz * f), hb = gr(P.x - sx * f, P.z - cz * f), hl = gr(P.x + cz * 1.8, P.z - sx * 1.8), hr = gr(P.x - cz * 1.8, P.z + sx * 1.8);
-      k._pitch = b.grounded && Math.abs(hf - hb) < 3 ? Math.atan2(hb - hf, f * 2) : 0; k._roll = b.grounded && Math.abs(hl - hr) < 3 ? Math.atan2(hl - hr, 3.6) : 0; }
-    k.g.rotation.x = THREE.MathUtils.damp(k.g.rotation.x, b.grounded ? (k._pitch || 0) : -b.vel.y * 0.008, 8, dt);
-    k.g.rotation.z = THREE.MathUtils.damp(k.g.rotation.z, k._roll || 0, 8, dt);
-    if(b.grounded && spd > 22 && Math.random() < 0.5) this.m.particles.emit('dust', b.pos, { n: 1, power: 1 });
-    if(b.grounded && !k._wasG && (k._airT || 0) > 0.35){ this.m.tps.addTrauma(0.2); this.m.particles.emit('dust', b.pos, { n: 6, power: 2 }); if(k._airT > 1) this.m.toast('Salto de ' + k._airT.toFixed(1) + ' s'); }
-    k._airT = b.grounded ? 0 : (k._airT || 0) + dt; k._wasG = b.grounded;
-    k._dist = (k._dist || 0) + spd * dt; if(k._dist > 400){ k._dist = 0; if(this.m.quest) this.m.quest('drive'); }
-    // HUD do quadriciclo
-    this._kHud = (this._kHud || 0) - dt; if(this._kHud <= 0){ this._kHud = 0.1; this._kartHUD(k); }
-    // atropelar
-    if(spd > 26) for(const o of this.m.actors){ if(o === a || !o.alive || o.onBus || (this.m.isAlly && this.m.isAlly(a, o))) continue; if(o.root.position.distanceTo(b.pos) < 3.8 && !(o._runCd > 0)){ o._runCd = 1; o.takeDamage(Math.round(20 + spd * 0.4), a); if(o.body && !o.remote){ o.body.vel.x += b.vel.x * 0.7; o.body.vel.z += b.vel.z * 0.7; o.body.vel.y = 16; o.body.grounded = false; } k.sp *= 0.7; this.m.tps.addTrauma(0.3); this.m.audio.play('hit', b.pos, { vol: 0.8 }); } }
+    const k = a.kart; if(!k) return;
+    vehicleStep(this, a, k, dt, mi);
+    if(a.kart && a.isPlayer){ this._kHud = (this._kHud || 0) - dt; if(this._kHud <= 0){ this._kHud = 0.1; this._kartHUD(k); } }
+    k._dist = (k._dist || 0) + Math.abs(k.sp) * dt; if(k._dist > 400){ k._dist = 0; if(this.m.quest) this.m.quest('drive'); }
   }
   _kartHUD(k){
     let el = document.getElementById('kart-hud');
@@ -285,7 +269,8 @@ export class FortV20 {
   interact(P){
     if(P.kart){ this.exitKart(P); return true; }
     const pp = P.root.position, near = (list, d) => list.find(o => o.pos.distanceTo(pp) < d);
-    const k = this.karts.find(k => !k.driver && k.pos.distanceTo(pp) < 5.5); if(k){ this._enterKart(P, k); return true; }
+    const fl = this.karts.find(k => !k.driver && !k.dead && k.flipped && k.pos.distanceTo(pp) < 7); if(fl){ fl.flipped = 0; fl.roll = 0; fl.g.userData.body.rotation.z = 0; this.m.audio.play('build', pp, { vol: 0.6, rate: 0.7 }); this.m.toast('Veículo endireitado'); return true; }
+    const k = this.karts.find(k => !k.driver && !k.dead && k.pos.distanceTo(pp) < (k.S ? k.S.radius + 3.5 : 5.5)); if(k){ this._enterKart(P, k); return true; }
     const c = near(this.cannons, 3.6); if(c){ this._fire(P, c.dx, c.dz, 68, 52, c.pos); if(this.m.quest) this.m.quest('cannon'); return true; }
     const cp = near(this.catapults, 7);
     if(cp){ if(cp.cd > 0){ this.m.toast('A catapulta está a recarregar'); return true; } cp.cd = 6; cp.t = 0.001; const d = _a.subVectors(cp.target, cp.pos).setY(0).normalize(); P.body.pos.set(cp.pos.x, cp.pos.y + 6, cp.pos.z); this._fire(P, d.x, d.z, 90, 70, cp.pos); if(this.m.quest) this.m.quest('cannon'); return true; }
@@ -304,10 +289,11 @@ export class FortV20 {
     this.m.audio.play('launch', pos, { vol: 1, rate: 0.7 }); this.m.audio.play('thunder', pos, { vol: 0.25, rate: 1.6 });
   }
   hint(P){
-    if(P.kart) return '<kbd>E</kbd> Sair do quadriciclo · ' + 'SHIFT derrapar · F nitro';
+    if(P.kart) return '<kbd>E</kbd> Sair · <kbd>SHIFT</kbd> travão de mão · <kbd>F</kbd> nitro · <kbd>H</kbd> buzina';
     if(this.ride) return '<kbd>ESPAÇO</kbd> Saltar do balão';
     const pp = P.root.position, near = (list, d) => list.find(o => o.pos.distanceTo(pp) < d);
-    if(this.karts.some(k => !k.driver && k.pos.distanceTo(pp) < 5.5)) return '<kbd>E</kbd> Conduzir quadriciclo';
+    { const fl = this.karts.find(k => !k.driver && !k.dead && k.flipped && k.pos.distanceTo(pp) < 7); if(fl) return '<kbd>E</kbd> Endireitar ' + fl.S.n; }
+    { const k = this.karts.find(k => !k.driver && !k.dead && k.pos.distanceTo(pp) < (k.S ? k.S.radius + 3.5 : 5.5)); if(k) return '<kbd>E</kbd> Conduzir ' + k.S.n + ' <small>(' + Math.max(0, Math.round(k.hp / k.S.hp * 100)) + '%)</small>'; }
     if(near(this.cannons, 3.6)) return '<kbd>E</kbd> Disparar-te do canhão';
     if(near(this.catapults, 7)) return '<kbd>E</kbd> Catapulta (voa para o centro)';
     if(this.balloons.some(b => b.state === 'idle' && b.pos.distanceTo(pp) < 5)) return '<kbd>E</kbd> Subir no balão';
@@ -318,7 +304,7 @@ export class FortV20 {
   }
   minimapMarks(P){
     const out = [];
-    for(const k of this.karts) if(!k.driver) out.push({ x: k.pos.x, z: k.pos.z, c: '#f97316', s: 3, sq: true });
+    for(const k of this.karts) if(!k.driver && !k.dead) out.push({ x: k.pos.x, z: k.pos.z, c: '#f97316', s: 3, sq: true });
     for(const p of this.portals) out.push({ x: p.pos.x, z: p.pos.z, c: '#a855f7', s: 4 });
     for(const b of this.balloons) if(b.state === 'idle') out.push({ x: b.pos.x, z: b.pos.z, c: '#facc15', s: 3 });
     for(const v of this.vending) out.push({ x: v.pos.x, z: v.pos.z, c: '#60a5fa', s: 3, sq: true });
@@ -357,7 +343,13 @@ export class FortV20 {
       else if(b.state === 'gone'){ b.t += dt; if(b.t > 35){ b.state = 'idle'; b.g.visible = true; b.g.position.copy(b.base); } }
     }
     // karts parados: assentam
-    for(const k of this.karts) if(!k.driver && ((this._kf = (this._kf || 0) + 1) % 30 === 0)) k.g.position.y = this._ground(k.pos.x, k.pos.z);
+    this._kf = (this._kf || 0) + 1;
+    for(const k of this.karts){
+      if(k.dead){ k.dead -= dt; if(k.dead <= 0){ k.dead = 0; k.hp = k.S.hp; k.flipped = 0; k.g.visible = true; k.g.position.copy(k.home); k.yaw = k.homeYaw; k.g.rotation.set(0, k.yaw, 0); k.g.userData.body.rotation.set(0, 0, 0); } continue; }
+      if(k.driver) continue;
+      if(this._kf % 30 === 0) k.g.position.y = this._ground(k.pos.x, k.pos.z);
+      if(this._kf % 10 === 0){ const d2 = (k.pos.x - pp.x) ** 2 + (k.pos.z - pp.z) ** 2; k.g.visible = d2 < (m.quality === 'baixa' ? 150 : 230) ** 2; }   // culling por distância
+    }
     // gnomos
     for(let i = this.gnomes.length - 1; i >= 0; i--){ const gn = this.gnomes[i]; gn.g.rotation.y += dt * 0.6;
       if(P.alive && gn.pos.distanceTo(pp) < 3.2){ this.group.remove(gn.g); this.gnomes.splice(i, 1); const app = m.app; if(app && app.career){ app.career.gnomes = Array.from(new Set([...(app.career.gnomes || []), gn.id])); app.career.xp = (app.career.xp || 0) + 150; try { app.store && app.store.set('career', app.career); } catch(e){} }
@@ -365,8 +357,10 @@ export class FortV20 {
   }
   /** jogador remoto: mostra o quadriciclo por baixo dele */
   remoteKart(a){
-    if(a.remoteKart && !a._kartG){ a._kartG = kartMesh(0x64748b); a._kartG.position.y = -0.6; a.root.add(a._kartG); }
-    if(a._kartG) a._kartG.visible = !!a.remoteKart;
+    const type = a.remoteVeh || 'quad';
+    if(a._kartG && a._kartG.userData.type !== type){ a.root.remove(a._kartG); a._kartG = null; }
+    if(a.remoteKart && !a._kartG){ a._kartG = vehicleMesh(type); a._kartG.position.y = -(VEHICLES[type] || VEHICLES.quad).seat; a.root.add(a._kartG); }
+    if(a._kartG){ a._kartG.visible = !!a.remoteKart; if(a.remoteKart){ const sp = Math.hypot(a.body.vel.x, a.body.vel.z), ud = a._kartG.userData; for(const w of ud.wheels) w.rotation.y -= sp * 0.016 / ud.S.wr; } }
   }
-  dispose(){ const P = this.m.player; if(P && P.kart) this.exitKart(P); this.m.scene.remove(this.group); }
+  dispose(){ const P = this.m.player; if(P && P.kart) this.exitKart(P); if(this.eng) this.eng.dispose(); this.m.scene.remove(this.group); }
 }

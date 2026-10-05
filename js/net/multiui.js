@@ -7,6 +7,7 @@ import { PublicLobby, NetSession, genCode, NET_MODES, selfId } from './net.js';
 import { MODES } from '../game/modes.js';
 import { MapStore } from '../game/creative.js';
 import { PublicHub, Matchmaker, MM_MODES } from './matchmaking.js';
+import { MpMenu, myUid } from './mpmenu.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -22,7 +23,7 @@ export class MultiUI {
     const code = new URLSearchParams(location.search).get('sala');
     if(code) setTimeout(() => { this.app.go('multi'); this.join(code); }, 400);
   }
-  profile(){ const s = this.app.settings; return { name: s.name || 'Jogador', skin: s.skin, body: s.body, loadout: this.app.loadout() }; }
+  profile(){ const s = this.app.settings; return { uid: myUid(), name: s.name || 'Jogador', skin: s.skin, body: s.body, loadout: this.app.loadout() }; }
   _build(){
     $('mp-mode').innerHTML = NET_MODES.map(k => `<option value="${k}">${MODES[k].name}</option>`).join('') + `<option value="custom">Mapa criado (Criativo)</option>`;
     $('mp-create').onclick = () => this.create();
@@ -49,19 +50,21 @@ export class MultiUI {
     this.mm.onChange = (info) => this._mmView(info);
     this.mm.onMatch = (d) => this._mmFound(d);
     $('hub-form').onsubmit = (e) => { e.preventDefault(); const i = $('hub-in'); this.hub.open(this.profile()); this.hub.say(i.value); i.value = ''; };
-    $('hub-list').onclick = (e) => { const b = e.target.closest('[data-inv]'); if(b && this.session){ this.hub.invite(b.dataset.inv, this.session.code, this.session.settings.mode); b.textContent = 'ENVIADO'; b.disabled = true; } };
+    $('hub-list').onclick = (e) => { const fa = e.target.closest('[data-fadd]'); if(fa){ const p = this.hub.list().find(o => o.id === fa.dataset.fadd); if(p && this.menu) this.menu.addFriend(p); return; } const b = e.target.closest('[data-inv]'); if(b && this.session){ this.hub.invite(b.dataset.inv, this.session.code, this.session.settings.mode); b.textContent = 'ENVIADO'; b.disabled = true; } };
     this.hub.on(() => this._hubView());
     this.hub.onInvite = (d) => this._invitePop(d);
     this._hubView();
+    this.menu = new MpMenu(this);
   }
-  queue(mode){
+  queue(mode, region){
     if(this.session) this.leave();
     this.hub.open(this.profile()); this.hub.setStatus('Na fila · ' + MM_MODES[mode].n);
-    this.mm.join(mode, this.profile());
+    this.mm.join(mode, this.profile(), region || (this.menu && this.menu.region));
   }
   _mmView(info){
     const st = $('mm-status'); if(!st) return;
     $('mm-modes').classList.toggle('hide', !!info);
+    if($('mpx-play')) $('mpx-play').classList.toggle('hide', !!info);
     st.classList.toggle('hide', !info);
     if(!info) return;
     $('mm-title').textContent = info.state === 'found' ? 'PARTIDA ENCONTRADA' : 'À PROCURA · ' + info.M.n.toUpperCase();
@@ -86,8 +89,9 @@ export class MultiUI {
   _hubView(){
     const L = $('hub-list'); if(!L) return;
     const list = this.hub.list();
-    $('hub-count').textContent = (list.length + (this.hub.room ? 1 : 0)) + ' online';
-    L.innerHTML = list.length ? list.map(p => `<li><b>${esc(p.name)}</b><small>${esc(p.st)}</small>${this.session ? `<button data-inv="${esc(p.id)}">CONVIDAR</button>` : ''}</li>`).join('') : `<li class="empty">${this.hub.room ? 'Ainda não há mais ninguém online. Partilha o jogo com amigos.' : 'A ligar ao lobby público…'}</li>`;
+    $('hub-count').textContent = String(list.length + (this.hub.room ? 1 : 0));
+    const isF = (p) => this.menu && this.menu.friends.some(f => f.uid === p.uid);
+    L.innerHTML = list.length ? list.map(p => `<li><b>${esc(p.name)}</b><small>${esc(p.st)}${p.ping ? ' · ' + p.ping + ' ms' : ''}</small>${p.uid && !isF(p) ? `<button class="ghost" data-fadd="${esc(p.id)}">+ AMIGO</button>` : ''}${this.session ? `<button data-inv="${esc(p.id)}">CONVIDAR</button>` : ''}</li>`).join('') : `<li class="empty">${this.hub.room ? 'Ainda não há mais ninguém online. Partilha o jogo com amigos.' : 'A ligar ao lobby público…'}</li>`;
     const C = $('hub-chat'); C.innerHTML = this.hub.chat.map(m => `<p class="${m.me ? 'me' : ''}"><b>${esc(m.from)}:</b> ${esc(m.text)}</p>`).join('') || '<p class="sys">Chat global — todos os jogadores online veem as mensagens.</p>'; C.scrollTop = C.scrollHeight;
   }
   _invitePop(d){

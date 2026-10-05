@@ -16,11 +16,12 @@ const wrapA = (a) => { while(a > Math.PI) a -= Math.PI * 2; while(a < -Math.PI) 
 export class BotBrain {
   constructor(actor, game, skill){
     this.a = actor; this.g = game;
-    this.skill = skill ?? (0.35 + Math.random() * 0.5);   // 0..1
+    this.skill = skill ?? (0.45 + Math.random() * 0.45);   // 0..1 — bots mais competentes
     this.state = 'wander'; this.stateT = 0; this.target = null; this.goal = null;
     this.reaction = 0; this.strafeDir = Math.random() < 0.5 ? 1 : -1; this.strafeT = 0;
     this.thinkT = 0; this.heard = null; this.buildCd = 0; this.aimErr = new THREE.Vector3();
-    this.jumpT = 2 + Math.random() * 3;
+    this.jumpT = 1.5 + Math.random() * 2.5;
+    this.healCd = 0; this.repositionCd = 0;
   }
   hear(pos){ if(!this.target) this.heard = pos.clone(); }
   _visibleEnemies(){
@@ -56,11 +57,13 @@ export class BotBrain {
     };
     if(!a.slots[1] || a.reserve[a.slots[1]] < 5){
       const ch = W.chests.filter(c => !c.opened && !c.elev).sort((x, y) => x.pos.distanceTo(a.root.position) - y.pos.distanceTo(a.root.position))[0];
-      if(ch && ch.pos.distanceTo(a.root.position) < 260){ U.loot = 0.6; this._lootTarget = ch; }
+      if(ch && ch.pos.distanceTo(a.root.position) < 320){ U.loot = 0.7; this._lootTarget = ch; }
     }
     const hasGun = a.slots.some((t, i) => i > 0 && t);
     if(!hasGun){ U.engage *= enemies.length && enemies[0].d < 18 ? 1 : 0.35; if(U.loot) U.loot = 0.85; }
-    if(enemies.length && lowHp && a.mats.wood >= 10) U.engage += 0.1;
+    if(enemies.length && lowHp && a.mats.wood >= 10) U.engage += 0.15;
+    // bots mais agressivos quando têm vantagem
+    if(enemies.length && a.hp + a.shield > 80) U.engage += 0.1;
     let best = 'wander', bv = -1; for(const k in U) if(U[k] > bv){ bv = U[k]; best = k; }
     if(best !== this.state){ this.state = best; this.stateT = 0; if(best === 'engage') this.reaction = 0.55 - this.skill * 0.35; }
     this.target = enemies.length ? enemies[0].o : null;
@@ -94,23 +97,30 @@ export class BotBrain {
         const has = (w) => a.slots.includes(w);
         const want = d < 22 && has('shotgun') ? 'shotgun' : d < 40 && has('smg') ? 'smg' : d > 120 && has('sniper') ? 'sniper' : has('rifle') ? 'rifle' : has('smg') ? 'smg' : has('pistol') ? 'pistol' : a.slots.find((s, i) => i > 0 && s) || 'pickaxe';
         // v16: granada ocasional
-        if(a.grenades > 0 && d > 18 && d < 60 && Math.random() < 0.004 + this.skill * 0.004 && g.fs){ const dir = _v2.subVectors(t.root.position, pos); dir.y = d * 0.12; g.fs.throwGrenade(a, dir.normalize(), Math.min(1, d / 60) * 0.75 + 0.25); }
+        if(a.grenades > 0 && d > 18 && d < 60 && Math.random() < 0.006 + this.skill * 0.006 && g.fs){ const dir = _v2.subVectors(t.root.position, pos); dir.y = d * 0.12; g.fs.throwGrenade(a, dir.normalize(), Math.min(1, d / 60) * 0.75 + 0.25); }
         const idx = a.slots.indexOf(want); if(idx >= 0 && idx !== a.slot && a.cooldown <= 0) a.equip(idx);
         faceDir = _v2.subVectors(t.root.position, pos);
         // strafe
-        this.strafeT -= dt; if(this.strafeT <= 0){ this.strafeT = 0.6 + Math.random() * 1.2; this.strafeDir *= -1; }
+        this.strafeT -= dt; if(this.strafeT <= 0){ this.strafeT = 0.5 + Math.random() * 1.0; this.strafeDir *= -1; }
         const ideal = a.weaponType === 'shotgun' ? 10 : a.weaponType === 'smg' ? 18 : a.weaponType === 'pickaxe' ? 4 : 45;
-        a.moveInput.set(this.strafeDir * 0.8, d > ideal * 1.4 ? 1 : d < ideal * 0.6 ? -0.6 : 0);
+        a.moveInput.set(this.melee ? 0 : this.strafeDir * 0.8, d > ideal * 1.4 ? 1 : d < ideal * 0.6 ? -0.6 : 0);
+        if(this.melee){ a.sprint = d > 12; }
+        // v22: bots usam veículos próximos para perseguir alvos distantes
+        if(d > 150 && g.v20 && g.v20.karts && !a.kart){ const k = g.v20.karts.find(k => !k.driver && !k.dead && k.pos.distanceTo(pos) < 40); if(k) g.v20.enterKart(a, k); }
         this.reaction -= dt;
         // rajadas: alterna janelas de tiro/pausa (bots não são aimbots)
         this.burstT = (this.burstT || 0) - dt;
-        if(this.burstT <= 0){ this.burstOn = !this.burstOn; this.burstT = this.burstOn ? 0.5 + Math.random() * 0.8 : 0.5 + Math.random() * (1.4 - this.skill); }
+        if(this.burstT <= 0){ this.burstOn = !this.burstOn; this.burstT = this.burstOn ? 0.5 + Math.random() * 0.8 : 0.4 + Math.random() * (1.2 - this.skill); }
         if(this.reaction <= 0 && this.burstOn) wantFire = true;
         // cobertura: parede quando levou dano recentemente
-        if(a.lastHitBy && this.buildCd <= 0 && (a.mats.wood >= 10 || a.mats.stone >= 10 || a.mats.metal >= 10) && a.hp + a.shield < 80 && Math.random() < 0.02 + this.skill * 0.03){
-          this.buildCd = 4; g.botBuildWall(a, t);
+        if(!this.melee && a.lastHitBy && this.buildCd <= 0 && (a.mats.wood >= 10 || a.mats.stone >= 10 || a.mats.metal >= 10) && a.hp + a.shield < 80 && Math.random() < 0.03 + this.skill * 0.04){
+          this.buildCd = 3; g.botBuildWall(a, t);
         }
-        this.jumpT -= dt; if(this.jumpT <= 0 && a.body.grounded && d < 60){ this.jumpT = 1.5 + Math.random() * 3; a.body.vel.y = 26; }
+        // v22: bots constroem rampa para ganhar altura
+        if(!this.melee && a.mats.wood >= 20 && this.buildCd <= 0 && d > 30 && d < 80 && Math.random() < 0.015 + this.skill * 0.02){
+          this.buildCd = 5; g.botBuildRamp && g.botBuildRamp(a);
+        }
+        this.jumpT -= dt; if(this.jumpT <= 0 && a.body.grounded && d < 60){ this.jumpT = 1.2 + Math.random() * 2; a.body.vel.y = 26; }
         break;
       }
       default: { // wander

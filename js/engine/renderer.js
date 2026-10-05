@@ -148,7 +148,14 @@ export class Renderer {
     // v20: Alta também (o passe de sombras era ~20% das draw calls)
     if(this.qualityName === 'media' || this.qualityName === 'alta'){ this.r.shadowMap.autoUpdate = false; this._sf = (this._sf || 0) + 1; if(this._sf % 2 === 0) this.r.shadowMap.needsUpdate = true; }
     else this.r.shadowMap.autoUpdate = true;
+    // v22: tempo de GPU (EXT_disjoint_timer_query_webgl2) — uma consulta em voo de cada vez
+    const gl = this.r.getContext();
+    if(this._tq === undefined){ this._tq = gl.getExtension && gl.getExtension('EXT_disjoint_timer_query_webgl2'); this.gpuMs = null; }
+    const tq = this._tq; let began = false;
+    if(tq && !this._q){ this._q = gl.createQuery(); gl.beginQuery(tq.TIME_ELAPSED_EXT, this._q); began = true; }
     this.composer.render(dt);
+    if(began) gl.endQuery(tq.TIME_ELAPSED_EXT);
+    else if(tq && this._q && gl.getQueryParameter(this._q, gl.QUERY_RESULT_AVAILABLE)){ if(!gl.getParameter(tq.GPU_DISJOINT_EXT)){ const ns = gl.getQueryParameter(this._q, gl.QUERY_RESULT); this.gpuMs = this.gpuMs == null ? ns / 1e6 : this.gpuMs + (ns / 1e6 - this.gpuMs) * 0.2; } gl.deleteQuery(this._q); this._q = null; }
     // estatísticas + resolução adaptativa (mantém ~60fps)
     this._acc += dt; this._frames++;
     if(this._acc >= 0.5){

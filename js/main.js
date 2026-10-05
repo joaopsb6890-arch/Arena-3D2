@@ -2,6 +2,7 @@
 // MAIN — orquestra telas (Lobby / Armário / Estúdio / Carreira /
 // Config / Partida), loop de render, estatísticas, persistência.
 // ============================================================
+import { initApp22 } from './app22.js';
 import * as THREE from 'three';
 import { Renderer, QUALITY } from './engine/renderer.js';
 import { setTextureResolution } from './engine/textures.js';
@@ -18,6 +19,7 @@ import { EMOTES } from './anim/clips.js';
 import { RARITY, CATS, DEFAULT_OWNED, itemInfo, dailyShop } from './game/cosmetics.js';
 import { thumb, pumpThumbs } from './game/thumbs.js';
 import { Quests } from './game/quests.js';
+import { initLiveEvent } from './game/liveevent.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -110,7 +112,7 @@ class App {
   updateLockPrompt(){
     const el = $('lock-prompt'); if(!el) return;
     const m = this.match;
-    const need = this.screen === 'match' && m && m.active && !m.paused && m.phase !== 'over' && !(m.creative && m.creative.menuOpen) && !this.pointerFallback && document.pointerLockElement !== this.renderer.r.domElement;
+    const need = this.screen === 'match' && m && m.active && !m.paused && m.phase !== 'over' && !(m.creative && m.creative.menuOpen) && !(m.s22 && m.s22.uiOpen) && !this.pointerFallback && document.pointerLockElement !== this.renderer.r.domElement;
     el.classList.toggle('show', !!need);
   }
   go(screen){
@@ -122,11 +124,13 @@ class App {
     if(prev === 'shop' && screen !== 'shop'){ document.body.classList.remove('trying'); $('shop-modal').classList.add('hide'); this._refreshPlayer(); }
     if(prev === 'locker' && screen !== 'locker' && this.lobby.previewGlide) this.lobby.previewGlider(null);
     if(screen === 'multi' && this.multi) this.multi.onShow();
-    this.lobby.active = screen === 'multi' || screen === 'lobby' || screen === 'locker' || screen === 'shop' || screen === 'career' || screen === 'challenges' || screen === 'settings';
+    this.lobby.active = screen === 'multi' || screen === 'lobby' || screen === 'locker' || screen === 'shop' || screen === 'career' || screen === 'challenges' || screen === 'settings' || screen === 'battlepass' || screen === 'liveevent';
     if(this.lobby.active){
       this.renderer.setScene(this.lobby.scene, this.lobby.camera);
       this.renderer.r.toneMappingExposure = 1.0; this.lobby.scene.fog = null;
-      this.lobby.camBase.set(screen === 'locker' ? 3.6 : screen === 'multi' ? -6 : 0, screen === 'locker' ? 4.4 : 4.7, screen === 'locker' ? 19 : screen === 'shop' ? 20 : 27);
+      // v23: esconder nametags em paineis opacos
+      const tags = document.getElementById('lobby-tags'); if(tags) tags.style.display = (screen === 'battlepass' || screen === 'liveevent' || screen === 'career' || screen === 'challenges' || screen === 'settings') ? 'none' : 'block';
+      this.lobby.camBase.set(screen === 'locker' ? 3.6 : screen === 'multi' ? -6 : 0, screen === 'locker' ? 4.4 : 4.7, screen === 'locker' ? 19 : screen === 'shop' ? 20 : screen === 'battlepass' || screen === 'liveevent' ? 24 : 27);
       this.lobby.camLook.set(screen === 'locker' ? 3.6 : 0, 4.0, 0);
       if(screen === 'shop') this._shopUI();
       this.lobby.cinematic(false);
@@ -140,28 +144,74 @@ class App {
     this._careerUI();
   }
   startMatch(modeId, layout, session){
+    // v22: ecrã de carregamento REAL — cada etapa só avança quando o trabalho dela termina
     modeId = modeId || this.settings.mode || 'br';
     session = session || null;
     if(!MODES[modeId]) modeId = 'br';
     this.lastStart = [modeId, layout ? JSON.parse(JSON.stringify(layout)) : null];
-    $('loading').classList.remove('hide'); this._progress(20, modeId === 'creative' ? 'Preparando a ilha criativa…' : layout ? 'Montando o seu mapa…' : 'Gerando a ilha…');
+    const M = MODES[modeId], tok = { cancel: false }; this._loadTok = tok;
+    if(modeId === 'creative' && !layout) layout = { name: 'Meu mapa', base: 'vazia', items: [] };
+    const steps = [['map', 'Mapa e terreno', 30], ['assets', 'Texturas e modelos', 25], ['shaders', 'Shaders', 25], ['net', session ? 'Ligação aos jogadores' : 'Ligação (offline)', 10], ['spawn', 'Spawn', 10]];
+    const total = M.race ? 1 : (session && session.startInfo && session.startInfo.roster ? session.startInfo.roster.length : (M.bots || 0) + 1);
+    $('ld-info').classList.remove('hide'); $('ld-mode').textContent = M.name.toUpperCase();
+    $('ld-map').textContent = layout ? layout.name : modeId === 'zumbis' ? 'Ilha · Noite dos Zumbis' : M.race ? 'Ilha · Circuito das Estradas' : M.rounds || M.gunList ? 'Ilha · Arena Central' : 'Ilha Arena 3D';
+    $('ld-players').textContent = total + (total === 1 ? ' jogador' : ' jogadores') + (session ? ' · multijogador' : M.bots ? ' · com bots' : '');
+    $('ld-steps').classList.remove('hide'); $('ld-tip').classList.remove('hide'); $('ld-cancel').classList.remove('hide');
+    $('ld-steps').innerHTML = steps.map(([k, n]) => `<li data-k="${k}"><i></i><span>${n}</span><em></em></li>`).join('');
+    const TIPS = ['Constrói uma rampa e uma parede ao mesmo tempo para subir em segurança', 'Escudo azul absorve dano antes da vida — bebe poções antes de lutar', 'Desliza (C a correr) para ganhar velocidade nas descidas', 'Prime F3 em jogo para ver colisões e desempenho', 'Veículos: SHIFT faz derrapar e carrega um turbo', 'Marca locais no mapa grande com o botão direito', 'A tempestade fecha em 3 fases — fica atento ao relógio', 'Headshots fazem o dobro do dano', 'Abre baús com E; as lhamas dão muitos materiais', 'Num Duo/Esquadrão podes reanimar colegas derrubados (E)'];
+    let tipI = Math.floor(Math.random() * TIPS.length); const showTip = () => { $('ld-tip').textContent = 'DICA: ' + TIPS[tipI++ % TIPS.length]; }; showTip();
+    clearInterval(this._tipT); this._tipT = setInterval(showTip, 3500);
+    let done = 0; const mark = (k, st, txt) => { const li = $('ld-steps').querySelector(`[data-k="${k}"]`); if(li){ li.className = st; if(txt != null) li.querySelector('em').textContent = txt; } if(st === 'ok'){ done += steps.find(x => x[0] === k)[2]; this._progress(done, steps.find(x => x[0] === k)[1] + ' — pronto'); } else if(st === 'run') this._progress(done + 2, steps.find(x => x[0] === k)[1] + '…'); };
+    const waitEl = $('ld-wait');
+    const cleanup = () => { clearInterval(this._tipT); ['ld-info', 'ld-steps', 'ld-tip', 'ld-cancel', 'ld-wait'].forEach(id => $(id).classList.add('hide')); };
+    $('ld-cancel').onclick = () => { tok.cancel = true; $('ld-cancel').textContent = 'A cancelar…'; };
+    const aborted = () => {
+      if(!tok.cancel && this._loadTok === tok) return false;
+      if(this._loadTok === tok){ if(this.match){ this.match.active = false; this.match.dispose(); this.match = null; } cleanup(); $('ld-cancel').textContent = 'Cancelar'; $('loading').classList.add('hide');
+        if(session && this.session) { try { this.multi && this.multi.leave ? this.multi.leave() : this.session.leave(); } catch(e){} }
+        this.renderer.setScene(this.lobby.scene, this.lobby.camera); this.lobby.active = true; this.go(session ? 'multi' : 'lobby'); this.toastUI('Carregamento cancelado'); }
+      return true;
+    };
+    { const f = $('load-fill'); f.style.transition = 'none'; f.style.width = '0%'; void f.offsetWidth; f.style.transition = ''; }
+    $('loading').classList.remove('hide'); $('loading').style.display = ''; this._progress(2, 'A preparar…');
     ['victory', 'defeat', 'pause-overlay'].forEach(id => $(id).classList.add('hide'));
     setTimeout(async () => {
-      if(this.match){ this.match.active = false; this.match.dispose(); this.match = null; }
-      if(modeId === 'creative' && !layout) layout = { name: 'Meu mapa', base: 'vazia', items: [] };
-      this.match = new Match(this, modeId, layout, session);
-      this._progress(70, `${MODES[modeId].name}: ${MODES[modeId].bots + 1} jogador(es)…`); await tick();
-      this.match.start(this.settings.skin, this.settings.body);
-      this.match.active = true;
-      this.screen = 'match'; document.body.dataset.screen = 'match';
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('show'));
-      this.lobby.active = false;
-      this.renderer.setScene(this.match.scene, this.match.camera);
-      this._progress(90, 'A preparar shaders (evita travadas)…');
-      try { await this.match.warmup(this.renderer.r); } catch(e){ console.warn(e); this.renderer.r.compile(this.match.scene, this.match.camera); }
-      if(this.match){ this.renderer.render(1 / 60); }
-      this._progress(100, 'Pronto'); setTimeout(() => $('loading').classList.add('hide'), 200);
-      this.audio.play('woosh', null, { vol: 0.6 });
+      try {
+        if(this.match){ this.match.active = false; this.match.dispose(); this.match = null; }
+        mark('map', 'run'); await tick(); if(aborted()) return;
+        let t0 = performance.now();
+        this.match = new Match(this, modeId, layout, session);
+        mark('map', 'ok', Math.round(performance.now() - t0) + ' ms'); await tick(); if(aborted()) return;
+        mark('assets', 'run'); await tick(); t0 = performance.now();
+        this.match.start(this.settings.skin, this.settings.body);
+        const nA = this.match.actors.length;
+        mark('assets', 'ok', nA + ' personagens · ' + Math.round(performance.now() - t0) + ' ms'); await tick(); if(aborted()) return;
+        this.renderer.setScene(this.match.scene, this.match.camera);
+        mark('shaders', 'run'); await tick(); t0 = performance.now();
+        try { await this.match.warmup(this.renderer.r); } catch(e){ console.warn(e); this.renderer.r.compile(this.match.scene, this.match.camera); }
+        mark('shaders', 'ok', (this.renderer.r.info.programs ? this.renderer.r.info.programs.length + ' programas · ' : '') + Math.round(performance.now() - t0) + ' ms'); if(aborted()) return;
+        mark('net', 'run');
+        const net = this.match.net;
+        if(net){
+          // espera que todos os outros jogadores acabem de carregar (máx. 12 s)
+          net.sendReady(); const need = net.humans(), tw = performance.now(); waitEl.classList.remove('hide');
+          while(net.readyCount() < need && performance.now() - tw < 12000){ waitEl.textContent = `À espera de jogadores (${net.readyCount()}/${need})`; if(Math.floor((performance.now() - tw) / 1000) % 2 === 0) net.sendReady(); await new Promise(r => setTimeout(r, 250)); if(aborted()) return; }
+          waitEl.textContent = `Jogadores prontos (${net.readyCount()}/${need})`;
+          mark('net', 'ok', (session.pingMs && session.pingMs() != null ? session.pingMs() + ' ms · ' : '') + net.readyCount() + '/' + need);
+        } else { waitEl.classList.remove('hide'); waitEl.textContent = `Jogadores prontos (${nA}/${nA})`; mark('net', 'ok', 'offline'); }
+        mark('spawn', 'run'); await tick(); if(aborted()) return;
+        this.match.active = true;
+        this.screen = 'match'; document.body.dataset.screen = 'match';
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('show'));
+        this.lobby.active = false;
+        this.renderer.render(1 / 60);
+        mark('spawn', 'ok');
+        this._progress(100, 'Pronto');
+        // fade para o jogo
+        const fd = $('ld-fade'); fd.classList.add('on');
+        setTimeout(() => { $('loading').classList.add('hide'); cleanup(); setTimeout(() => fd.classList.remove('on'), 60); }, 260);
+        this.audio.play('woosh', null, { vol: 0.6 });
+      } catch(e){ console.error(e); cleanup(); $('loading').classList.add('hide'); this.toastUI('Erro ao carregar: ' + e.message); }
     }, 60);
   }
   leaveMatch(){
@@ -195,7 +245,7 @@ class App {
       this.settings.mode = b.dataset.mode; this.saveSettings && this.saveSettings(); try { localStorage.setItem('fa_mode', b.dataset.mode); } catch(err){}
       paint();
     });
-    this.settings.mode = localStorage.getItem('fa_mode') || this.settings.mode || 'br';
+    this.settings.mode = (() => { try { return localStorage.getItem('fa_mode') || this.settings.mode || 'br'; } catch(e){ return this.settings.mode || 'br'; } })();
     paint();
   }
   loadout(){ return { pickaxe: this.settings.pickaxe, glider: this.settings.glider, contrail: this.settings.contrail }; }
@@ -208,10 +258,14 @@ class App {
     store.set('career', this.career);
   }
   update(dt){
+    const pf = this.perf || (this.perf = { upd: 0, ren: 0, gpu: null }), t0 = performance.now();
     if(this.screen === 'match' && this.match){ this.match.update(dt); }
     else if(this.screen === 'studio' && this.studio){ this.studio.update(dt); }
     else if(this.lobby){ this.lobby.update(dt); }
+    const t1 = performance.now();
     this.renderer.render(dt);
+    const t2 = performance.now();
+    pf.upd += (t1 - t0 - pf.upd) * 0.1; pf.ren += (t2 - t1 - pf.ren) * 0.1; pf.gpu = this.renderer.gpuMs;
     if(this.screen === 'shop' || this.screen === 'locker') pumpThumbs();
   }
   _stats(s){
@@ -241,6 +295,21 @@ class App {
     $('vb-num').textContent = (c.vbucks || 0).toLocaleString('pt-PT');
     const el = $('career-stats');
     if(el) el.innerHTML = [['Partidas', c.matches], ['Vitórias', c.wins], ['Abates', c.kills], ['Nível', lvl], ['Taxa de vitória', c.matches ? Math.round(c.wins / c.matches * 100) + '%' : '—'], ['XP total', c.xp]].map(([k, v]) => `<div class="cs"><b>${v}</b><span>${k}</span></div>`).join('');
+    // v23: painel do Passe de Batalha
+    const bpLvl = $('bp-cur-lvl'), bpNext = $('bp-next-info'), bpFill = $('bp-bar-fill'), bpTiers = $('bp-tiers');
+    if(bpLvl) bpLvl.textContent = lvl;
+    if(bpNext) bpNext.textContent = `Próximo nível: ${1000 - (c.xp % 1000)} XP`;
+    if(bpFill) bpFill.style.width = p + '%';
+    if(bpTiers){
+      const REWARDS = ['200 V-Bucks', 'Planador', 'Emote', 'Picareta', 'Rastro', 'Skin', '300 V-Bucks', 'Mochila', 'Spray', 'Wrap'];
+      let html = '';
+      for(let i = 1; i <= 20; i++){
+        const unlocked = i <= lvl;
+        const r = REWARDS[(i - 1) % REWARDS.length];
+        html += `<div class="bp-tier ${unlocked ? 'unlocked' : ''} ${i === lvl ? 'current' : ''}"><div class="bp-tier-num">${i}</div><div class="bp-tier-reward">${r}</div><div class="bp-tier-status">${unlocked ? 'OK' : '---'}</div></div>`;
+      }
+      bpTiers.innerHTML = html;
+    }
   }
   // ---------- cosméticos ----------
   _card(id, opts){
@@ -356,6 +425,8 @@ class App {
     bind('set-party', 'party', (v) => this.lobby.setParty(v && this.screen === 'lobby'));
     bind('set-stats', 'showStats');
     if($('set-autoq')) bind('set-autoq', 'autoQ');
+    initApp22(this, store);   // v22: música, acessibilidade, idiomas, cosméticos extra, ranking
+    initLiveEvent(this);       // v23: eventos ao vivo + login Google
     // partida
     $('btn-resume').addEventListener('click', () => { if(this.match && this.match.paused) this.match.togglePause(); this.lockPointer(); });
     $('lock-prompt').addEventListener('click', () => this.lockPointer());

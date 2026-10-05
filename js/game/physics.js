@@ -55,82 +55,118 @@ export class PhysicsWorld {
     const u = r.dir > 0 ? t : 1 - t;
     return b.min.y + THREE.MathUtils.clamp(u, 0, 1) * (b.max.y - b.min.y);
   }
-  /** chão sob um ponto (considera terreno, topo de caixas e rampas) */
+  /** v22: telhado em cone (pirâmide de 4 lados) */
+  coneHeight(b, x, z){
+    const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2, hw = (b.max.x - b.min.x) / 2;
+    const d = Math.max(Math.abs(x - cx), Math.abs(z - cz)) / hw;
+    return b.min.y + THREE.MathUtils.clamp(1 - d, 0, 1) * (b.max.y - b.min.y);
+  }
+  surfaceTop(b, x, z){ return b.ramp ? this.rampHeight(b, x, z) : b.cone ? this.coneHeight(b, x, z) : b.max.y; }
+  /** chão sob um ponto (considera terreno, topo de caixas, rampas e cones) */
   groundAt(x, z, feetY, radius){
     let g = this.heightAt(x, z);
     const rr = radius || 0;
     const near = this.nearBoxes(x - rr, z - rr, x + rr, z + rr);
     for(let i = 0; i < near.length; i++){ const b = near[i];
       if(x < b.min.x - rr * 0.3 || x > b.max.x + rr * 0.3 || z < b.min.z - rr * 0.3 || z > b.max.z + rr * 0.3) continue;
-      const top = b.ramp ? this.rampHeight(b, x, z) : b.max.y;
+      const top = this.surfaceTop(b, x, z);
       if(top <= feetY + STEP && top > g) g = top;
     }
     return g;
   }
-  /** move um corpo tipo cápsula: body {pos, vel, radius, height, grounded} */
+  /**
+   * v22: controlador de personagem com SEPARAÇÃO DE EIXOS (X → Z → Y) e varrimento em sub-passos:
+   *  • cada sub-passo anda no máximo meio raio → não atravessa paredes finas mesmo a 100+ u/s;
+   *  • em X e Z a cápsula é testada contra caixas expandidas pelo raio (soma de Minkowski); ao bater,
+   *    encosta à face e anula SÓ essa componente da velocidade → desliza ao longo da parede, não pára;
+   *  • degraus até STEP são subidos automaticamente (a caixa não bloqueia e o chão "salta" para o topo);
+   *  • rampas e cones são superfícies (não bloqueiam de lado) e funcionam como teto por baixo.
+   */
   moveCharacter(body, dt){
-    const p = body.pos, v = body.vel;
+    const p = body.pos, v = body.vel, r = body.radius, H = body.height;
     v.y -= GRAVITY * (body.gravityScale ?? 1) * dt;
     if(body.maxFall) v.y = Math.max(v.y, -body.maxFall);
-    // horizontal com sub-passos
-    const steps = Math.ceil(Math.hypot(v.x, v.z) * dt / 0.6) || 1;
+    this._unstick(body);
+    const dist = Math.hypot(v.x, v.z) * dt, steps = Math.min(16, Math.max(1, Math.ceil(dist / Math.max(0.25, r * 0.5))));
+    body.hitWall = false;
     for(let s = 0; s < steps; s++){
-      p.x += v.x * dt / steps; p.z += v.z * dt / steps;
-      this._resolveHorizontal(body);
+      const dx = v.x * dt / steps, dz = v.z * dt / steps;
+      if(dx){ p.x += dx; this._sweepAxis(body, 'x', dx); }
+      if(dz){ p.z += dz; this._sweepAxis(body, 'z', dz); }
+      this._resolveCircles(body);
     }
     p.y += v.y * dt;
-    // teto
-    const nb = this.nearBoxes(p.x - 2, p.z - 2, p.x + 2, p.z + 2);
-    for(let i = 0; i < nb.length; i++){ const b = nb[i];
-      if(b.ramp) continue;
-      if(p.x > b.min.x && p.x < b.max.x && p.z > b.min.z && p.z < b.max.z){
-        const head = p.y + body.height;
-        if(v.y > 0 && head > b.min.y && p.y < b.min.y){ p.y = b.min.y - body.height; v.y = 0; }
+    // teto (caixas normais e parte de baixo de rampas/cones)
+    if(v.y > 0){
+      const nb = this.nearBoxes(p.x - r, p.z - r, p.x + r, p.z + r);
+      for(let i = 0; i < nb.length; i++){ const b = nb[i];
+        if(p.x < b.min.x || p.x > b.max.x || p.z < b.min.z || p.z > b.max.z) continue;
+        const under = (b.ramp || b.cone) ? this.surfaceTop(b, p.x, p.z) - 0.7 : b.min.y;
+        const head = p.y + H;
+        if(head > under && p.y < under - 0.3 && p.y + STEP < this.surfaceTop(b, p.x, p.z)){ p.y = under - H; v.y = 0; }
       }
     }
-    const g = this.groundAt(p.x, p.z, p.y, body.radius);
+    const lift = body.lift || 0;   // v22: veículos — o "assento" fica acima do chão
+    const g = this.groundAt(p.x, p.z, p.y - lift, r) + lift;
     const wasGrounded = body.grounded;
     body.landVy = 0;
     if(p.y <= g + 0.05 && v.y <= 0){
       if(!wasGrounded) body.landVy = v.y;
-      // snap (inclui descer degraus/rampas suavemente)
       p.y = g; v.y = 0; body.grounded = true;
     } else if(wasGrounded && v.y <= 0 && p.y - g < STEP * 0.8){
-      p.y = g; v.y = 0; body.grounded = true;
+      p.y = g; v.y = 0; body.grounded = true;   // colar ao descer degraus/rampas
     } else body.grounded = false;
     return body;
   }
-  _resolveHorizontal(body){
+  /** resolve um eixo: se a cápsula entrou numa caixa (expandida pelo raio), encosta-a à face de onde veio */
+  _sweepAxis(body, ax, d){
+    const p = body.pos, r = body.radius, H = body.height, v = body.vel;
+    const nb = this.nearBoxes(p.x - r - 0.5, p.z - r - 0.5, p.x + r + 0.5, p.z + r + 0.5);
+    for(let i = 0; i < nb.length; i++){ const b = nb[i];
+      if(b.ramp || b.cone) continue;
+      const feet = p.y - (body.lift || 0);
+      if(p.y + H <= b.min.y + 0.05 || feet >= b.max.y - STEP) continue;          // por cima (degrau) ou por baixo
+      if(p.x <= b.min.x - r || p.x >= b.max.x + r || p.z <= b.min.z - r || p.z >= b.max.z + r) continue;
+      // cantos arredondados: fora da caixa nos 2 eixos → distância ao canto
+      const cx = THREE.MathUtils.clamp(p.x, b.min.x, b.max.x), cz = THREE.MathUtils.clamp(p.z, b.min.z, b.max.z);
+      const ex = p.x - cx, ez = p.z - cz;
+      if(ex !== 0 && ez !== 0){ const d2 = ex * ex + ez * ez; if(d2 >= r * r) continue; const dd = Math.sqrt(d2), k = (r - dd) / dd; p.x += ex * k; p.z += ez * k; body.hitWall = true; continue; }
+      if(!d) continue;
+      if(ax === 'x'){ p.x = d > 0 ? b.min.x - r - 1e-3 : b.max.x + r + 1e-3; if(Math.sign(v.x) === Math.sign(d)) v.x = 0; }
+      else { p.z = d > 0 ? b.min.z - r - 1e-3 : b.max.z + r + 1e-3; if(Math.sign(v.z) === Math.sign(d)) v.z = 0; }
+      body.hitWall = true;
+    }
+  }
+  _resolveCircles(body){
     const p = body.pos, r = body.radius;
     const nc = this.nearCircles(p.x - r - 1, p.z - r - 1, p.x + r + 1, p.z + r + 1);
     for(let i = 0; i < nc.length; i++){ const c = nc[i];
-      if(p.y > c.top) continue;
+      if(p.y - (body.lift || 0) > c.top - 0.2) continue;
       const dx = p.x - c.x, dz = p.z - c.z, d2 = dx * dx + dz * dz, rr = r + c.r;
-      if(d2 < rr * rr && d2 > 1e-6){ const d = Math.sqrt(d2), k = (rr - d) / d; p.x += dx * k; p.z += dz * k; }
-    }
-    const nb = this.nearBoxes(p.x - r - 1, p.z - r - 1, p.x + r + 1, p.z + r + 1);
-    for(let i = 0; i < nb.length; i++){ const b = nb[i];
-      if(b.ramp) continue;
-      if(p.y + body.height <= b.min.y || p.y >= b.max.y - STEP) continue; // acima/abaixo ou degrau
-      const cx = THREE.MathUtils.clamp(p.x, b.min.x, b.max.x), cz = THREE.MathUtils.clamp(p.z, b.min.z, b.max.z);
-      const dx = p.x - cx, dz = p.z - cz, d2 = dx * dx + dz * dz;
-      if(d2 < r * r){
-        if(d2 > 1e-6){ const d = Math.sqrt(d2), k = (r - d) / d; p.x += dx * k; p.z += dz * k; }
-        else { // dentro: empurra pelo eixo de menor penetração
-          const px = Math.min(p.x - b.min.x, b.max.x - p.x), pz = Math.min(p.z - b.min.z, b.max.z - p.z);
-          if(px < pz) p.x = (p.x - b.min.x < b.max.x - p.x) ? b.min.x - r : b.max.x + r;
-          else p.z = (p.z - b.min.z < b.max.z - p.z) ? b.min.z - r : b.max.z + r;
-        }
-      }
+      if(d2 < rr * rr && d2 > 1e-6){ const d = Math.sqrt(d2), k = (rr - d) / d; p.x += dx * k; p.z += dz * k;
+        // desliza: tira a componente da velocidade que aponta para o tronco
+        const nx = dx / d, nz = dz / d, vn = body.vel.x * nx + body.vel.z * nz; if(vn < 0){ body.vel.x -= vn * nx; body.vel.z -= vn * nz; } }
     }
   }
+  /** se ficou DENTRO de uma caixa (ex.: construíram uma parede em cima), sai pelo lado mais curto */
+  _unstick(body){
+    const p = body.pos, r = body.radius, H = body.height;
+    const nb = this.nearBoxes(p.x - r, p.z - r, p.x + r, p.z + r);
+    for(let i = 0; i < nb.length; i++){ const b = nb[i];
+      if(b.ramp || b.cone || p.y + H <= b.min.y || p.y - (body.lift || 0) >= b.max.y - STEP) continue;
+      if(p.x <= b.min.x || p.x >= b.max.x || p.z <= b.min.z || p.z >= b.max.z) continue;
+      const px0 = p.x - b.min.x, px1 = b.max.x - p.x, pz0 = p.z - b.min.z, pz1 = b.max.z - p.z, m = Math.min(px0, px1, pz0, pz1);
+      if(m === px0) p.x = b.min.x - r; else if(m === px1) p.x = b.max.x + r; else if(m === pz0) p.z = b.min.z - r; else p.z = b.max.z + r;
+    }
+  }
+  _resolveHorizontal(body){ this._sweepAxis(body, 'x', 0); this._sweepAxis(body, 'z', 0); this._resolveCircles(body); }
   /** v19: obstáculo vertical à frente (para escalar) → topo da parede/rocha/falésia ou null */
   wallAhead(pos, fx, fz, dist, height){
     const px = pos.x + fx * dist, pz = pos.z + fz * dist, y = pos.y;
     let top = null;
     const nb = this.nearBoxes(px - 0.6, pz - 0.6, px + 0.6, pz + 0.6);
     for(let i = 0; i < nb.length; i++){ const b = nb[i];
-      if(b.ramp || b.noClimb) continue;
+      if(b.ramp || b.cone || b.noClimb) continue;
       if(px < b.min.x - 0.5 || px > b.max.x + 0.5 || pz < b.min.z - 0.5 || pz > b.max.z + 0.5) continue;
       if(b.max.y <= y + STEP || b.min.y > y + height) continue;
       if(top === null || b.max.y > top) top = b.max.y;

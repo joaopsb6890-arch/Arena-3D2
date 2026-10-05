@@ -613,6 +613,11 @@ export function createCharacter(skinKey, opts){
     add(J.head, box(R * 0.22, R * 0.05, R * 0.05), Mat.metal(0x111827, 0.3), V(0, R * 1.08, R * 1.05));
     add(J.head, torus(R * 1.0, R * 0.02, 4, 30, Math.PI), Mat.metal(0x111827, 0.3), hc.clone().add(V(0, R * 0.08, 0)), [Math.PI / 2, 0, Math.PI], null, { fine: true });
   }
+  if(S.extras.includes('chain')){   // v22: fio de ouro com medalhão
+    const gold = Mat.metal(0xf5c518, 0.25);
+    add(J.chest, new THREE.TorusGeometry(0.46 * B, 0.045, 6, 24), gold, V(0, cH * 0.84, 0.2 * B), [Math.PI / 2 + 0.55, 0, 0], V(1, 1.15, 1));
+    add(J.chest, new THREE.CylinderGeometry(0.14, 0.14, 0.05, 14), gold, V(0, cH * 0.6, 0.62 * B), [Math.PI / 2 - 0.2, 0, 0]);
+  }
   if(S.extras.includes('tie')){
     add(J.chest, box(0.4, 0.26, 0.05, 0.02), Mat.cloth(0xfafafa, 'fabric'), V(0, cH * 0.88, 0.5 * B), [-0.2, 0, 0]);
     add(J.chest, box(0.14, 0.14, 0.08, 0.03), Mat.cloth(S.accent, 'fabric'), V(0, cH * 0.84, 0.56 * B), [-0.15, 0, 0]);

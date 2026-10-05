@@ -100,9 +100,12 @@ export class AudioSystem {
     const b = this.buffers[name]; if(!b) return null;
     const c = this.ctx, src = c.createBufferSource(); src.buffer = b;
     src.playbackRate.value = (opt.rate || 1) * (1 + (Math.random() - 0.5) * (opt.jitter ?? 0.08));
-    const g = c.createGain(); g.gain.value = opt.vol ?? 1;
+    // v22: oclusão — som com parede pelo meio fica abafado e mais baixo
+    let lp = opt.lowpass, vol = opt.vol ?? 1;
+    if(pos && this.occlude && opt.occlude !== false){ try { if(this.occlude(pos)){ lp = Math.min(lp || 99999, 950); vol *= 0.55; } } catch(e){} }
+    const g = c.createGain(); g.gain.value = vol;
     let node = src;
-    if(opt.lowpass){ const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = opt.lowpass; node.connect(f); node = f; }
+    if(lp){ const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; node.connect(f); node = f; }
     node.connect(g);
     let out = g;
     if(pos){ const pn = this._panner(pos); g.connect(pn); out = pn; }

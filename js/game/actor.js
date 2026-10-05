@@ -32,7 +32,7 @@ export class Actor {
     this.slots = ['pickaxe', null, null, null, null];
     this.slot = 0;
     this.mag = {}; this.reserve = { rifle: 60, shotgun: 10, sniper: 6, smg: 60, pistol: 32 };
-    this.mats = { wood: 60, stone: 30, metal: 0 }; this.potions = 1; this.medkits = 0;
+    this.mats = { wood: 60, stone: 30, metal: 0 }; this.potions = 1; this.medkits = 0; this.bandages = 0; this.minis = 0;
     this.rar = {}; this.tac = { granada: 0, impulso: 0, escudo: 0, fumo: 0, arbusto: 0 }; this.tacSel = 'granada'; this.bush = null; this.rifts = 0;      // v16: raridade por arma, granadas, fendas
     this.slideT = 0; this.mantleT = 0; this.climbing = false; this.stamina = 4; this.staminaMax = 4; this.jumpHeld = false; this.coyote = 0; this.jumpBuf = 0; this.inWater = false;
     this.cooldown = 0; this.reloading = 0; this.using = 0; this.useKind = null;
@@ -81,7 +81,7 @@ export class Actor {
     this._equipped = t;
     if(t === 'pickaxe' || !t){ this.anim.setWeapon(null); this.pickaxe.visible = true; }
     else {
-      if(!this.models[t]) this.models[t] = createWeapon(t);
+      if(!this.models[t]){ this.models[t] = createWeapon(t); const wr = this.isPlayer ? (this.game.app && this.game.app.settings.wrap) : this.wrap; if(wr && this.game.applyWrap) this.game.applyWrap(this.models[t], wr); }
       this.anim.setWeapon(this.models[t]); this.pickaxe.visible = false;
     }
     this.anim.play('equip');
@@ -92,7 +92,7 @@ export class Actor {
   canFire(){ return this.alive && this.cooldown <= 0 && this.reloading <= 0 && this.using <= 0 && this.mode === 'ground'; }
   tryFire(origin, dir){
     const t = this.weaponType;
-    if(!this.canFire()) return false;
+    if(this.downed || !this.canFire()) return false;
     const st = WEAPON_STATS[t];
     if(t === 'pickaxe'){
       // combo de 3 golpes: direita → esquerda → vertical pesado (reseta se parar de bater)
@@ -138,23 +138,31 @@ export class Actor {
   }
   _finishReload(){
     const t = this._reloadType, st = WEAPON_STATS[t]; if(!st) return;
-    const need = st.mag - (this.mag[t] || 0), take = Math.min(need, this.reserve[t] || 0);
+    const cap = st.mag + (this.att && this.att[t] && this.att[t].includes('carregador') ? Math.ceil(st.mag * 0.4) : 0);
+    const need = cap - (this.mag[t] || 0), take = Math.min(need, this.reserve[t] || 0);
     this.mag[t] = (this.mag[t] || 0) + take; this.reserve[t] -= take;
   }
   useItem(kind){
     if(!this.alive || this.using > 0 || this.reloading > 0 || this.mode !== 'ground') return false;
     if(kind === 'potion' && (this.potions <= 0 || this.shield >= 100)) return false;
     if(kind === 'medkit' && (this.medkits <= 0 || this.hp >= 100)) return false;
-    this.useKind = kind; this.using = kind === 'potion' ? 2.0 : 3.2;
+    if(this.downed) return false;
+    // v22: bandagens (+15 vida até 75) e mini escudos (+25 escudo até 50)
+    if(kind === 'bandage' && (this.bandages <= 0 || this.hp >= 75)) return false;
+    if(kind === 'mini' && (this.minis <= 0 || this.shield >= 50)) return false;
+    this.useKind = kind; this.using = kind === 'potion' ? 2.0 : kind === 'mini' ? 1.0 : kind === 'bandage' ? 2.2 : 3.2;
     this.anim.setWeapon(null); this.pickaxe.visible = false;
-    const prop = kind === 'potion' ? createPotion() : createMedkit();
-    this.anim.setProp(prop); this.anim.play(kind === 'potion' ? 'drink' : 'medkit');
+    const drink = kind === 'potion' || kind === 'mini';
+    const prop = drink ? createPotion() : createMedkit(); if(kind === 'mini') prop.scale.setScalar(0.65); if(kind === 'bandage') prop.scale.set(0.7, 0.45, 0.7);
+    this.anim.setProp(prop); this.anim.play(drink ? 'drink' : 'medkit', kind === 'mini' ? { speed: 1.8 } : undefined);
     return true;
   }
   _finishUse(){
     const k = this.useKind; this.useKind = null; this.anim.setProp(null);
     if(k === 'potion'){ this.potions--; this.shield = Math.min(100, this.shield + 50); this.game.particles.emit('shield', this.root.position); }
     if(k === 'medkit'){ this.medkits--; this.hp = Math.min(100, this.hp + 50); this.game.particles.emit('heal', this.root.position); }
+    if(k === 'bandage'){ this.bandages--; this.hp = Math.min(75, this.hp + 15); this.game.particles.emit('heal', this.root.position); }
+    if(k === 'mini'){ this.minis--; this.shield = Math.min(50, this.shield + 25); this.game.particles.emit('shield', this.root.position); }
     this._equipped = null; this.equip(this.slot);
   }
   cancelUse(){ if(this.using > 0){ this.using = 0; this.useKind = null; this.anim.setProp(null); this.anim.stop('drink'); this.anim.stop('medkit'); this._equipped = null; this.equip(this.slot); } }
@@ -191,10 +199,11 @@ export class Actor {
     if(this.using > 0) this.cancelUse();
     // reação física: direção do golpe no espaço local
     if(from){ const d = _v.subVectors(this.root.position, from.root.position).normalize(); const localX = d.x * Math.cos(this.yaw) - d.z * Math.sin(this.yaw); this.anim.hitReact(localX, head ? 1.2 : 0.7); }
-    if(this.hp <= 0){ this.hp = 0; this.die(from); }
+    if(this.hp <= 0){ this.hp = 0; if(this.game.s22 && this.game.s22.tryDown(this, from)) return amount; this.die(from); }
     return amount;
   }
   die(killer){
+    if(this.downed){ this.downed = false; this.speedMul = this._sm0 || 1; }
     this.alive = false; this.climbing = false;
     if(this.local && this.game.net) this.game.net.sendDeath(this, killer);
     this.anim.stopEmotes(); this.anim.setWeapon(null); this.anim.play('death');
@@ -211,7 +220,7 @@ export class Actor {
     if(this.remote){ if(g.net) g.net.step(this, dt); }
     else if(this.alive){
       // v17: jogador mais rápido (andar 17→20, correr 23→28, agachado 8→10)
-      const speedBase = (this.crouch ? 10 : this.sprint ? 28 : 20) * (this.boostT > 0 ? 1.55 : 1);   // v20: placas de velocidade
+      const speedBase = (this.crouch ? 10 : this.sprint ? 28 : 20) * (this.boostT > 0 ? 1.55 : 1) * (this.speedMul || 1);   // v20: placas de velocidade
       // v16: água (lago/rio) abranda e salpica
       const wy = g.world && g.world.waterAt ? g.world.waterAt(b.pos.x, b.pos.z) : null;
       this.inWater = wy !== null && b.pos.y < wy + 0.4 && this.mode === 'ground';
@@ -231,7 +240,7 @@ export class Actor {
       } else if(this.mantleT > 0){
         // v16: escalar beirais — puxa o corpo para cima e para a frente numa curva curta
         this.mantleT -= dt; const M = this.mantle, u = 1 - Math.max(0, this.mantleT) / 0.32, e = u * u * (3 - 2 * u);
-        b.pos.x = M.from.x + (M.to.x - M.from.x) * Math.min(1, e * 1.4 - 0.4 > 0 ? e * 1.4 - 0.4 : 0);
+        b.pos.x = M.from.x + (M.to.x - M.from.x) * Math.min(1, Math.max(0, e * 1.4 - 0.4));
         b.pos.z = M.from.z + (M.to.z - M.from.z) * Math.min(1, Math.max(0, e * 1.4 - 0.4));
         b.pos.y = M.from.y + (M.to.y - M.from.y) * Math.min(1, e * 1.5);
         b.vel.set(0, 0, 0);
@@ -262,7 +271,7 @@ export class Actor {
         if(this.climbing) this._climbStep(dt, mi);
         else if(this.jumpHeld && mi.y > 0.5 && !this.flying && this.slideT <= 0 && this.stamina > 0.4 && !(this.mantleT > 0) && (this.airTime > 0.12 || b.grounded) && this._climbTimer <= 0) this._tryClimb();
         if(!this.climbing){ this._climbTimer = Math.max(0, (this._climbTimer || 0) - dt); if(b.grounded) this.stamina = Math.min(this.staminaMax, this.stamina + dt * 1.1); }
-        b.gravityScale = this.flying || this.climbing ? 0 : 1; b.maxFall = 0;
+        b.gravityScale = this.flying || this.climbing ? 0 : (g.gravMul || 1); b.maxFall = 0;
         if(this.flying) b.vel.y += ((this.flyUp || 0) * 28 - b.vel.y) * Math.min(1, 8 * dt);   // voo do Modo Criativo
       } else if(this.mode === 'freefall'){
         // mergulho (frente) acelera a queda, trás "trava" (planar de barriga); A/D inclina e curva
@@ -401,8 +410,8 @@ export class Actor {
   }
   _tryClimb(){
     const b = this.body, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 0.9, b.height);
-    if(top === null || top < b.pos.y + 2.2) return false;
+    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 1.2, b.height);
+    if(top === null || top < b.pos.y + 1.8) return false;   // v23: mais tolerante
     this.climbing = true; this.climbTop = top; this.climbT = 0; this.crouch = false;
     this.anim.stopEmotes();
     if(this.isPlayer && this.game.quest) this.game.quest('climb');
@@ -410,7 +419,7 @@ export class Actor {
   }
   _climbStep(dt, mi){
     const b = this.body, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 0.9, b.height + 1);
+    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 1.2, b.height + 1);   // v23: mais tolerante
     this.climbT += dt; this.stamina -= dt;
     const stop = (jumpOff) => {
       this.climbing = false; this._climbTimer = 0.35;
@@ -456,7 +465,7 @@ export class Actor {
   }
   /** plataforma de lançamento / salto do ônibus: impulso vertical → queda livre com planador reutilizável */
   launch(power){
-    this.body.vel.y = power || 95; this.body.grounded = false; this.launched = true;
+    this.body.vel.y = power || 95; this.body.grounded = false; this.launched = true; this._noFall = 4;
     this.mode = 'freefall'; this.anim.play('launch');
     this.game.audio.play('jump', this.root.position, { vol: 0.9, rate: 0.6 });
   }

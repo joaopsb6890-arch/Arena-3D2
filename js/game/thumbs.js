@@ -63,9 +63,12 @@ export function thumb(id, cb){
   if(!waiting.has(id)){ waiting.set(id, []); queue.push(id); }
   waiting.get(id).push(cb);
 }
-/** processa um item da fila (chamar no loop) */
+/** processa um item da fila (chamar no loop) — v23: throttle para não travar */
+let _pumpAcc = 0;
 export function pumpThumbs(){
   if(!queue.length) return;
+  _pumpAcc++;
+  if(_pumpAcc % 3 !== 0) return; // processa 1 a cada 3 frames
   try {
     if(!R) init();
     const id = queue.pop();   // LIFO: o que foi pedido por último (tela visível) primeiro
