@@ -17,6 +17,7 @@ import { FortExtras, TACTICALS } from './fnextra.js';
 import { FortV19 } from './fnv19.js';
 import { FortV20 } from './fnv20.js';
 import { SupplyDropSystem } from './supplydrops.js';
+import { CrystalSystem, KillStreakSystem } from './crystals.js';
 import { DebugOverlay } from './debug.js';
 import { Sys22 } from './sys22.js';
 import { attachBackBling, applyWrap, BACKBLINGS, WRAPS } from './cosmetics22.js';
@@ -54,6 +55,8 @@ export class Match {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.3, 6000);
     this.particles = new ParticleSystem(this.scene, this.quality);
+    // v25: aplicar densidade de partículas das definições
+    if(this.app.settings.particleDensity) this.particles.density = this.app.settings.particleDensity;
     this.physics = new PhysicsWorld(heightAt);
     this.world = new World(this.scene, this.physics, this.particles, this.audio, this.quality, { empty: (this.modeId === 'creative' || !!this.layout) && ((this.layout && this.layout.base) || 'vazia') === 'vazia', editable: this.modeId === 'creative' || !!this.layout });
     this.env = new Environment(this.scene, app.renderer, this.particles, this.audio, { time: app.settings.time ?? 15, cloudArea: 1400 });
@@ -76,6 +79,8 @@ export class Match {
     this.debug = new DebugOverlay(this);
     this.s22 = new Sys22(this);
     this.supplyDrops = new SupplyDropSystem(this);
+    this.crystals = new CrystalSystem(this);
+    this.killStreaks = new KillStreakSystem(this);
     this.applyWrap = applyWrap;
     this._bb22 = () => { const bbK = Object.keys(BACKBLINGS), wK = Object.keys(WRAPS); for(const a of this.actors){ if(a.isPlayer) attachBackBling(a.ch, this.app.settings.backbling); else if(!a.remote && Math.random() < 0.6){ attachBackBling(a.ch, bbK[1 + Math.floor(Math.random() * (bbK.length - 1))]); if(Math.random() < 0.3) a.wrap = wK[1 + Math.floor(Math.random() * (wK.length - 1))]; } } };
     this.rules = new ModeRules(this, this.modeId); this.mode = this.rules.M;
@@ -276,6 +281,8 @@ export class Match {
     if(this.debug) this.debug.dispose();
     if(this.s22) this.s22.dispose();
     if(this.supplyDrops) this.supplyDrops.dispose();
+    if(this.crystals) this.crystals.dispose();
+    if(this.killStreaks) this.killStreaks.dispose();
     const qt = $('quest-tracker'); if(qt) qt.innerHTML = '';
     if(this.net) this.net.dispose();
     const gc = document.getElementById('game-chat'); if(gc){ gc.classList.remove('on', 'typing'); gc.querySelector('.log').innerHTML = ''; }
@@ -658,7 +665,7 @@ export class Match {
   onActorDeath(victim, killer){
     this.particles.emit('digitize', victim.root.position, { color: new THREE.Color(victim.ch.S.accent || 0x60a5fa).getHex() });
     this.audio.play('elim', victim.root.position, { vol: 0.8 });
-    if(killer){ killer.kills++; if(this.sys) this.sys.addGold(killer, 50 + Math.floor((victim.gold || 0) / 2), victim.root.position); }
+    if(killer){ killer.kills++; if(this.sys) this.sys.addGold(killer, 50 + Math.floor((victim.gold || 0) / 2), victim.root.position); if(this.killStreaks) this.killStreaks.onKill(killer, victim); }
     if(killer && killer.brain && Math.random() < 0.6) setTimeout(() => { if(killer.alive && !killer.brain.target) killer.anim.play(['danceDefault', 'celebrate', 'laugh', 'hype'][Math.floor(Math.random() * 4)]); }, 700);
     this._killfeed(killer, victim);
     if(killer && killer.isPlayer && !this.isAlly(killer, victim)){ this.toast('ELIMINOU ' + victim.name.toUpperCase(), 'kill'); this.tps.addTrauma(0.15); this.quest('kill'); }
@@ -819,6 +826,10 @@ export class Match {
     if(this.creative) this.creative.update(dt);
     // v24b: supply drops
     if(this.supplyDrops) this.supplyDrops.update(dt);
+    // v24b: cristais flutuantes
+    if(this.crystals) this.crystals.update(dt);
+    // v24b: kill streaks
+    if(this.killStreaks) this.killStreaks.update(dt);
     // mira: ponto sob a mira (raycast do centro da câmera) → o personagem aponta para lá, a mira nunca fica sobre ele
     const aimOrigin = this.camera.position.clone(), aimDir = new THREE.Vector3(); this.camera.getWorldDirection(aimDir);
     const ah = this._cast(aimOrigin, aimDir, this.tps.curDist + 1, 600, this._targets(P));
@@ -1136,5 +1147,10 @@ export const SLOT_ICONS = {
   shotgun: '<svg viewBox="0 0 64 32"><path d="M2 13h44v2h16v4H46v1H30l-3 3H16l-5 6H4l5-8H2z" fill="currentColor"/><rect x="30" y="17" width="12" height="3" fill="currentColor"/></svg>',
   sniper: '<svg viewBox="0 0 64 32"><path d="M2 15h40l2-2h18v3H44v3H26l-4 8h-6l3-8H10l-4 5H1l3-6z" fill="currentColor"/><rect x="20" y="7" width="16" height="5" rx="2" fill="currentColor"/></svg>',
   smg: '<svg viewBox="0 0 64 32"><path d="M8 10h30l2-2h6v3h8v6h-8v2H34l-2 3h-4l-2 8h-7l2-8h-5l-4 4H6l4-6H4v-6h4z" fill="currentColor"/><rect x="24" y="19" width="5" height="10" fill="currentColor"/></svg>',
-  pistol: '<svg viewBox="0 0 64 32"><path d="M14 8h36v8H34l-3 3h-6l-4 11h-9l4-12h-2z" fill="currentColor"/><rect x="46" y="10" width="6" height="3" fill="currentColor"/></svg>'
+  pistol: '<svg viewBox="0 0 64 32"><path d="M14 8h36v8H34l-3 3h-6l-4 11h-9l4-12h-2z" fill="currentColor"/><rect x="46" y="10" width="6" height="3" fill="currentColor"/></svg>',
+  lmg: '<svg viewBox="0 0 64 32"><path d="M4 10h40l2-2h6v3h8v6h-8v3H36l-2 3h-4l-2 8h-7l2-8h-5l-4 4H2l4-6H0v-6h4z" fill="currentColor"/><rect x="24" y="19" width="6" height="12" fill="currentColor"/></svg>',
+  dmr: '<svg viewBox="0 0 64 32"><path d="M2 14h36l2-2h14v3H44v3H24l-3 8h-6l3-8H10l-4 5H1l3-6z" fill="currentColor"/><rect x="18" y="6" width="18" height="5" rx="2" fill="currentColor"/><rect x="26" y="3" width="3" height="4" fill="currentColor"/></svg>',
+  rocket: '<svg viewBox="0 0 64 32"><path d="M6 14h30l4-4h8v4h8v6h-8v4h-8l-4-4H6z" fill="currentColor"/><circle cx="48" cy="16" r="4" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  minigun: '<svg viewBox="0 0 64 32"><path d="M4 10h36l2-2h6v3h6v6h-6v3H34l-2 3h-4l-2 8h-7l2-8h-5l-4 4H2l4-6H0v-6h4z" fill="currentColor"/><rect x="44" y="8" width="12" height="4" fill="currentColor"/><rect x="44" y="20" width="12" height="4" fill="currentColor"/></svg>',
+  revolver: '<svg viewBox="0 0 64 32"><path d="M10 8h30v8H26l-2 3h-5l-3 11h-8l3-12h-1z" fill="currentColor"/><circle cx="22" cy="18" r="5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="40" y="10" width="6" height="3" fill="currentColor"/></svg>'
 };

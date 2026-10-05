@@ -89,7 +89,9 @@ const R = (a, b) => a + Math.random() * (b - a);
 export class ParticleSystem {
   constructor(scene, quality){
     this.scene = scene;
-    const cap = quality === 'baixa' ? 1500 : 4000;
+    // v25: pool baseado na qualidade (ultra_baixa/muito_baixa usam menos)
+    const cap = (quality === 'ultra_baixa' || quality === 'muito_baixa') ? 800 : quality === 'baixa' ? 1500 : 4000;
+    this.density = 1.0; // v25: multiplicador de densidade (ajustável nas definições)
     this.add = new Pool(scene, cap, true);
     this.alpha = new Pool(scene, cap, false);
     this.emitters = [];
@@ -109,6 +111,9 @@ export class ParticleSystem {
   /** Efeitos prontos */
   emit(type, pos, opt){
     opt = opt || {};
+    // v25: reduzir partículas se a densidade for baixa
+    const dens = this.density || 1.0;
+    if(dens < 1.0 && Math.random() > dens && type !== 'muzzle') return; // pula algumas emissões
     const x = pos.x, y = pos.y, z = pos.z;
     const dir = opt.dir || new THREE.Vector3(0, 1, 0);
     switch(type){

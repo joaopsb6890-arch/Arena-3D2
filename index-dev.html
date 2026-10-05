@@ -223,6 +223,11 @@
     <h2>CONFIGURAÇÕES</h2>
     <label><span>Nome</span><input id="set-name" type="text" maxlength="16"></label>
     <label><span>Qualidade gráfica</span><select id="set-quality" data-set="quality"></select></label>
+    <label><span>Distância de renderização</span><select id="set-renderdist"><option value="300">Muito Perto</option><option value="500">Perto</option><option value="700">Médio</option><option value="1000">Longe</option><option value="1500">Muito Longe</option></select></label>
+    <label><span>Densidade de partículas</span><select id="set-particles"><option value="0.3">Mínima</option><option value="0.5">Baixa</option><option value="0.7">Média</option><option value="1.0">Alta</option></select></label>
+    <label><span>Campo de visão (FOV)</span><input id="set-fov" type="range" min="60" max="110" step="5"></label>
+    <label class="chk"><input id="set-shadows" type="checkbox"><span>Sombras dinâmicas</span></label>
+    <label class="chk"><input id="set-bloom" type="checkbox"><span>Efeito de brilho (Bloom)</span></label>
     <label><span>Sensibilidade do mouse</span><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05"></label>
     <label><span>Volume</span><input id="set-vol" type="range" min="0" max="1" step="0.05"></label>
     <label><span>Clima da partida</span><select id="set-weather"><option value="limpo">Limpo</option><option value="nublado">Nublado</option><option value="chuva">Chuva</option><option value="tempestade">Tempestade</option><option value="neblina">Neblina</option></select></label>

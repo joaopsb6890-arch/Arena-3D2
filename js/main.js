@@ -58,7 +58,8 @@ class App {
     if(mobile) return 'muito_baixa';
     const cores = navigator.hardwareConcurrency || 4;
     const ram = navigator.deviceMemory || 4;
-    if(cores <= 2 || ram <= 2) return 'muito_baixa';
+    if(cores <= 2 || ram <= 2) return 'ultra_baixa';
+    if(cores <= 3 || ram <= 3) return 'muito_baixa';
     if(cores <= 4 || ram <= 4) return 'baixa';
     return cores >= 8 ? 'alta' : 'media';
   }
@@ -276,7 +277,7 @@ class App {
   _stats(s){
     // v20: qualidade automática — se o FPS ficar baixo ~4 s com a resolução adaptativa já no mínimo, desce um nível
     if(this.settings.autoQ !== false && this.screen === 'match' && !this.manual){
-      const order = ['muito_baixa', 'baixa', 'media', 'alta', 'ultra'], i = order.indexOf(this.qualityName);
+      const order = ['ultra_baixa', 'muito_baixa', 'baixa', 'media', 'alta', 'ultra'], i = order.indexOf(this.qualityName);
       this._aqLow = s.fps < 34 && s.minDyn ? (this._aqLow || 0) + 1 : 0;
       if(this._aqLow >= 8 && i > 0){ this._aqLow = 0; this.setQuality(order[i - 1]); if(this.match && this.match.toast) this.match.toast('Qualidade ajustada para ' + QUALITY[order[i - 1]].label + ' (desempenho)'); }
     }
@@ -437,6 +438,12 @@ class App {
     bind('set-party', 'party', (v) => this.lobby.setParty(v && this.screen === 'lobby'));
     bind('set-stats', 'showStats');
     if($('set-autoq')) bind('set-autoq', 'autoQ');
+    // v25: novas configurações gráficas
+    if($('set-renderdist')){ const el = $('set-renderdist'); el.value = this.settings.renderDist || 700; el.addEventListener('change', () => { this.settings.renderDist = +el.value; this.save(); }); }
+    if($('set-particles')){ const el = $('set-particles'); el.value = this.settings.particleDensity || 1.0; el.addEventListener('change', () => { this.settings.particleDensity = +el.value; this.save(); }); }
+    if($('set-fov')){ const el = $('set-fov'); el.value = this.settings.fov || 70; el.addEventListener('input', () => { this.settings.fov = +el.value; this.save(); if(this.tps) this.tps.baseFov = this.settings.fov; }); }
+    if($('set-shadows')){ const el = $('set-shadows'); el.checked = this.settings.shadows !== false; el.addEventListener('change', () => { this.settings.shadows = el.checked; this.save(); if(this.renderer) this.renderer.q.shadows = el.checked; }); }
+    if($('set-bloom')){ const el = $('set-bloom'); el.checked = this.settings.bloom !== false; el.addEventListener('change', () => { this.settings.bloom = el.checked; this.save(); if(this.renderer) this.renderer.q.bloom = el.checked; }); }
     initApp22(this, store);   // v22: música, acessibilidade, idiomas, cosméticos extra, ranking
     initLiveEvent(this);       // v23: eventos ao vivo + login Google
     // partida

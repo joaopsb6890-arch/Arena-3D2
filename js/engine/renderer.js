@@ -23,14 +23,15 @@ import { setViewMode } from './materials.js';
 import { setTextureResolution } from './textures.js';
 
 export const QUALITY = {
-  // v24: adicionada qualidade "Muito Baixa" para PCs fracos — sem sombras, sem bloom, resolução reduzida
-  muito_baixa: { label: 'Muito Baixa', pr: 0.75, shadows: false, shadowMap: 512, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 0.85, minDyn: 0.6, tex: 256 },
-  // v17: Baixa deixa de reduzir a resolução (era 0.75× e o modo adaptativo descia até 0.41× → imagem pixelizada).
-  // Agora renderiza à resolução nativa (limitada a 1×) com FXAA barato e o piso adaptativo é alto (0.85).
-  baixa:  { label: 'Baixa',  pr: 1.0, shadows: false, shadowMap: 1024, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 1, minDyn: 0.85, tex: 512 },
-  media:  { label: 'Média',  pr: 1.0,  shadows: true,  shadowMap: 2048, ao: false, bloom: true,  smaa: true,  maxPR: 1.25, minDyn: 0.75, tex: 1024 },
-  alta:   { label: 'Alta',   pr: 1.0,  shadows: true,  shadowMap: 2048, ao: false,  bloom: true,  smaa: true,  maxPR: 1.5, minDyn: 0.7, tex: 1024 },
-  ultra:  { label: 'Ultra',  pr: 1.25, shadows: true,  shadowMap: 4096, ao: true,  bloom: true,  smaa: true,  maxPR: 2,   minDyn: 0.7, tex: 2048 }
+  // v25: "Ultra Baixa" para PCs muito fracos — 0.6x resolução, sem nada extra
+  ultra_baixa: { label: 'Ultra Baixa', pr: 0.6, shadows: false, shadowMap: 256, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 0.75, minDyn: 0.5, tex: 128, maxParticles: 0.3, renderDist: 350 },
+  // v24: muito baixa para PCs fracos
+  muito_baixa: { label: 'Muito Baixa', pr: 0.75, shadows: false, shadowMap: 512, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 0.85, minDyn: 0.6, tex: 256, maxParticles: 0.5, renderDist: 500 },
+  // v17: baixa renderiza à resolução nativa com FXAA
+  baixa:  { label: 'Baixa',  pr: 1.0, shadows: false, shadowMap: 1024, ao: false, bloom: false, smaa: false, fxaa: true, maxPR: 1, minDyn: 0.85, tex: 512, maxParticles: 0.7, renderDist: 700 },
+  media:  { label: 'Média',  pr: 1.0,  shadows: true,  shadowMap: 2048, ao: false, bloom: true,  smaa: true,  maxPR: 1.25, minDyn: 0.75, tex: 1024, maxParticles: 1.0, renderDist: 900 },
+  alta:   { label: 'Alta',   pr: 1.0,  shadows: true,  shadowMap: 2048, ao: false,  bloom: true,  smaa: true,  maxPR: 1.5, minDyn: 0.7, tex: 1024, maxParticles: 1.0, renderDist: 1100 },
+  ultra:  { label: 'Ultra',  pr: 1.25, shadows: true,  shadowMap: 4096, ao: true,  bloom: true,  smaa: true,  maxPR: 2,   minDyn: 0.7, tex: 2048, maxParticles: 1.0, renderDist: 1500 }
 };
 
 export class Renderer {

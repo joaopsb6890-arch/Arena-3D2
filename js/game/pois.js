@@ -247,8 +247,8 @@ export function planPOIs(FLATS){
 
 export function buildPOIs(W, heightAt){
   const mats = {
-    brickR: Mat.brick(0xb4553f, 1), brickB: Mat.brick(0xd8c6a0, 1), conc: Mat.concrete(0xa3a8ad, 1), concD: Mat.concrete(0x7d8288, 1),
-    plasterB: Mat.plaster(0x9fbfd4), sheet: Mat.sheet(0x8fa0ae, 1), sheetW: Mat.sheet(0xffffff, 1), woodW: Mat.wood(0x9a6b43),
+    brickR: Mat.brick(0x6b4f8a, 1), brickB: Mat.brick(0x9d8ec0, 1), conc: Mat.concrete(0x4a4a6a, 1), concD: Mat.concrete(0x2e2e4a, 1),
+    plasterB: Mat.plaster(0x3d2e5c), sheet: Mat.sheet(0x5a5a8a, 1), sheetW: Mat.sheet(0xa8a8d8, 1), woodW: Mat.wood(0x4a2a5a),
     vcol: Mat.vcolor('props', { roughness: 0.55, metalness: 0.15 }), vcar: Mat.vcolor('car', { roughness: 0.3, metalness: 0.35 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x9fd3ff, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.45, envMapIntensity: 2 }),
     lampE: Mat.emissive(0xfff1c1, 2.2), signE: Mat.emissive(0xfb923c, 2.4)
