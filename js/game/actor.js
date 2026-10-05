@@ -410,8 +410,8 @@ export class Actor {
   }
   _tryClimb(){
     const b = this.body, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 1.2, b.height);
-    if(top === null || top < b.pos.y + 1.8) return false;   // v23: mais tolerante
+    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 1.4, b.height);
+    if(top === null || top < b.pos.y + 1.5) return false;   // v24: mais tolerante
     this.climbing = true; this.climbTop = top; this.climbT = 0; this.crouch = false;
     this.anim.stopEmotes();
     if(this.isPlayer && this.game.quest) this.game.quest('climb');
@@ -419,11 +419,11 @@ export class Actor {
   }
   _climbStep(dt, mi){
     const b = this.body, fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 1.2, b.height + 1);   // v23: mais tolerante
-    this.climbT += dt; this.stamina -= dt;
+    const top = this.game.physics.wallAhead(b.pos, fx, fz, b.radius + 1.4, b.height + 1);
+    this.climbT += dt; this.stamina -= dt * 0.8;   // v24: gasta menos stamina
     const stop = (jumpOff) => {
-      this.climbing = false; this._climbTimer = 0.35;
-      if(jumpOff){ b.vel.set(-fx * 14, 20, -fz * 14); this.game.audio.play('jump', this.root.position, { vol: 0.35 }); }
+      this.climbing = false; this._climbTimer = 0.25;
+      if(jumpOff){ b.vel.set(-fx * 16, 22, -fz * 16); this.game.audio.play('jump', this.root.position, { vol: 0.35 }); }   // v24: salto de parede mais forte
     };
     if(top === null){ // chegou ao topo: sobe o beiral
       this.climbing = false; b.vel.set(0, 0, 0);
@@ -433,10 +433,10 @@ export class Actor {
       else b.vel.set(fx * 6, 10, fz * 6);
       return;
     }
-    if(top - b.pos.y < 2.6){ stop(false); this._tryMantle(true); return; }
-    if(!this.jumpHeld || mi.y < 0.2 || this.stamina <= 0){ stop(mi.y < -0.3); return; }
-    const sp = 10 + Math.min(1, this.climbT * 4) * 2;       // sobe ~12 u/s
-    b.vel.set(fx * 3 + (mi.x ? -Math.cos(this.yaw) * mi.x * 5 : 0), sp, fz * 3 + (mi.x ? Math.sin(this.yaw) * mi.x * 5 : 0));
+    if(top - b.pos.y < 3.0){ stop(false); this._tryMantle(true); return; }   // v24: sobe beirais mais altos
+    if(!this.jumpHeld || mi.y < 0.1 || this.stamina <= 0){ stop(mi.y < -0.3); return; }
+    const sp = 14 + Math.min(1, this.climbT * 3) * 4;       // v24: sobe mais rápido (~18 u/s)
+    b.vel.set(fx * 3 + (mi.x ? -Math.cos(this.yaw) * mi.x * 6 : 0), sp, fz * 3 + (mi.x ? Math.sin(this.yaw) * mi.x * 6 : 0));   // v24: movimento lateral mais rápido
     if(Math.random() < dt * 6) this.game.particles.emit('dust', b.pos.clone().add(new THREE.Vector3(fx, 2.5, fz)), { n: 1, power: 0.5 });
     this._climbStepAcc = (this._climbStepAcc || 0) + dt; if(this._climbStepAcc > 0.28){ this._climbStepAcc = 0; this.game.onFootstep(this, 6); }
   }

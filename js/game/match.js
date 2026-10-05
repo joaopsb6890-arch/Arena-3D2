@@ -16,6 +16,7 @@ import { FortSystems } from './fnsystems.js';
 import { FortExtras, TACTICALS } from './fnextra.js';
 import { FortV19 } from './fnv19.js';
 import { FortV20 } from './fnv20.js';
+import { SupplyDropSystem } from './supplydrops.js';
 import { DebugOverlay } from './debug.js';
 import { Sys22 } from './sys22.js';
 import { attachBackBling, applyWrap, BACKBLINGS, WRAPS } from './cosmetics22.js';
@@ -74,6 +75,7 @@ export class Match {
     this.v20 = new FortV20(this);
     this.debug = new DebugOverlay(this);
     this.s22 = new Sys22(this);
+    this.supplyDrops = new SupplyDropSystem(this);
     this.applyWrap = applyWrap;
     this._bb22 = () => { const bbK = Object.keys(BACKBLINGS), wK = Object.keys(WRAPS); for(const a of this.actors){ if(a.isPlayer) attachBackBling(a.ch, this.app.settings.backbling); else if(!a.remote && Math.random() < 0.6){ attachBackBling(a.ch, bbK[1 + Math.floor(Math.random() * (bbK.length - 1))]); if(Math.random() < 0.3) a.wrap = wK[1 + Math.floor(Math.random() * (wK.length - 1))]; } } };
     this.rules = new ModeRules(this, this.modeId); this.mode = this.rules.M;
@@ -273,6 +275,7 @@ export class Match {
     if(this.v20) this.v20.dispose();
     if(this.debug) this.debug.dispose();
     if(this.s22) this.s22.dispose();
+    if(this.supplyDrops) this.supplyDrops.dispose();
     const qt = $('quest-tracker'); if(qt) qt.innerHTML = '';
     if(this.net) this.net.dispose();
     const gc = document.getElementById('game-chat'); if(gc){ gc.classList.remove('on', 'typing'); gc.querySelector('.log').innerHTML = ''; }
@@ -687,6 +690,7 @@ export class Match {
   interact(){
     const P = this.player;
     if(P.downed) return;
+    if(this.supplyDrops && this.supplyDrops.interact(P)) return;
     if(this.s22 && this.s22.interact(P)) return;
     if(this.v20 && this.v20.interact(P)) return;
     if(this.v19 && this.v19.interact(P)) return;
@@ -813,6 +817,8 @@ export class Match {
       this._zoneHidden = hid;
     }
     if(this.creative) this.creative.update(dt);
+    // v24b: supply drops
+    if(this.supplyDrops) this.supplyDrops.update(dt);
     // mira: ponto sob a mira (raycast do centro da câmera) → o personagem aponta para lá, a mira nunca fica sobre ele
     const aimOrigin = this.camera.position.clone(), aimDir = new THREE.Vector3(); this.camera.getWorldDirection(aimDir);
     const ah = this._cast(aimOrigin, aimDir, this.tps.curDist + 1, 600, this._targets(P));

@@ -133,8 +133,8 @@ export class BotBrain {
         const moveForward = lowHpEngage ? (d > ideal * 2 ? -0.8 : 0) : (d > ideal * 1.4 ? 1 : d < ideal * 0.6 ? -0.6 : 0);
         a.moveInput.set(this.melee ? 0 : this.strafeDir * 0.8 + this.flankDir * 0.3 * Math.sin(this.zigzagPhase + this.stateT * 2), moveForward);
         if(this.melee){ a.sprint = d > 12; }
-        // v22: bots usam veículos próximos para perseguir alvos distantes
-        if(d > 150 && g.v20 && g.v20.karts && !a.kart){ const k = g.v20.karts.find(k => !k.driver && !k.dead && k.pos.distanceTo(pos) < 40); if(k) g.v20.enterKart(a, k); }
+        // v22: bots usam veículos próximos para perseguir alvos distantes (v24: protegido contra erros)
+        try { if(d > 150 && g.v20 && g.v20.karts && !a.kart){ const k = g.v20.karts.find(k => !k.driver && !k.dead && k.pos.distanceTo(pos) < 40); if(k && g.v20._enterKart) g.v20._enterKart(a, k); } } catch(e){}
         this.reaction -= dt;
         // rajadas: alterna janelas de tiro/pausa (bots não são aimbots)
         this.burstT = (this.burstT || 0) - dt;

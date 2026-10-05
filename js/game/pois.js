@@ -55,7 +55,13 @@ export const LOCATIONS = [
   { n: 'Vila Nebulosa', x: 920, z: 150, r: 58 },
   { n: 'Observatório', x: -120, z: 920, r: 55 },
   { n: 'Floresta Profunda', x: -900, z: 350, r: 65 },
-  { n: 'Porto Seco', x: 450, z: -880, r: 60 }
+  { n: 'Porto Seco', x: 450, z: -880, r: 60 },
+  // v24b: mais POIs
+  { n: 'Cidade Submersa', x: -700, z: 700, r: 65 },
+  { n: 'Vulcão Adormecido', x: 850, z: -700, r: 70 },
+  { n: 'Jardim Suspenso', x: -850, z: -700, r: 55 },
+  { n: 'Fortaleza de Gelo', x: 700, z: 850, r: 60 },
+  { n: 'Mercado Noturno', x: -500, z: 500, r: 55 }
 ];
 export function locationAt(x, z){ for(const L of LOCATIONS) if(Math.hypot(x - L.x, z - L.z) < L.r) return L; return null; }
 // zonas sem vegetação/objetos aleatórios (retângulos x0,z0,x1,z1)
